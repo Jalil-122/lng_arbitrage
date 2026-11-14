@@ -117,7 +117,7 @@ def show_banner(text, colour):
 def show_verdict(result, threshold):
     """Turn the calculation result into one clear sentence in a coloured banner."""
     if result["decision"] == "CANCEL":
-        text = (f"CANCEL: best netback ${result['best_netback']:.2f} "
+        text = (f"CANCEL: best netback {dollars(result['best_netback'])} "
                 f"does not cover 115% HH (${result['fob_variable']:.2f})")
         show_banner(text, BANNER_COLOURS["cancel"])
 
@@ -136,8 +136,8 @@ def show_verdict(result, threshold):
         show_banner(text, BANNER_COLOURS["lift"])
 
     # One line of key numbers under the banner
-    st.caption(f"Netback Europe ${result['netback_europe']:.2f} · "
-               f"Netback Asia ${result['netback_asia']:.2f} ({result['asia_route']}) · "
+    st.caption(f"Netback Europe {dollars(result['netback_europe'])} · "
+               f"Netback Asia {dollars(result['netback_asia'])} ({result['asia_route']}) · "
                f"FOB 115% HH ${result['fob_variable']:.2f} · all USD/MMBtu")
 
 
@@ -200,6 +200,117 @@ def show_price_panel(quotes):
 
 
 # ---------------------------------------------------------------------------
+# 5. Netback comparison
+# ---------------------------------------------------------------------------
+
+def money(value):
+    """Format a number as a signed price, e.g. +29.40 or -0.90."""
+    return f"{value:+.2f}"
+
+
+def dollars(value):
+    """Format a number as dollars with the minus sign first: $2.27 or -$2.27."""
+    if value < 0:
+        return f"-${abs(value):.2f}"
+    return f"${value:.2f}"
+
+
+def spread_delta(spread):
+    """Prepare the small arrow under a netback tile.
+
+    Returns (text, colour mode). A spread that rounds to 0.00 is shown
+    grey with no arrow, instead of a confusing red "-0.00".
+    """
+    rounded = round(spread, 2)
+    if rounded == 0:
+        return "0.00", "off"          # "off" = grey, no green/red
+    return f"{rounded:+.2f}", "normal"  # "normal" = green if positive, red if negative
+
+
+def show_netbacks(result, inputs):
+    """Show Europe and Asia side by side: hub price - freight - regas = netback.
+
+    Only displays numbers already calculated in arb_calc.py.
+    """
+    st.subheader("Netbacks at Sabine Pass")
+    st.caption("Netback = what the cargo is worth back at Sabine Pass, in USD/MMBtu. "
+               "Price sources and times are in the panel above.")
+
+    # st.columns(2) splits the page into two side-by-side boxes
+    europe_box, asia_box = st.columns(2)
+
+    with europe_box:   # everything indented below is drawn inside the left box
+        delta_text, delta_colour = spread_delta(-result["spread"])   # positive = Europe ahead
+        st.metric(
+            "🇪🇺 Europe (NWE, TTF)",
+            dollars(result['netback_europe']),
+            delta=f"{delta_text} vs Asia",
+            delta_color=delta_colour,
+        )
+        europe_table = pd.DataFrame([
+            {"Item": "TTF (converted)", "USD/MMBtu": money(result["ttf_usd"])},
+            {"Item": "Freight to NWE", "USD/MMBtu": money(-inputs["freight_nwe"])},
+            {"Item": "Regas Europe", "USD/MMBtu": money(-inputs["regas_europe"])},
+            {"Item": "= Netback", "USD/MMBtu": money(result["netback_europe"])},
+        ])
+        st.dataframe(europe_table, hide_index=True, width="stretch")
+
+    with asia_box:
+        delta_text, delta_colour = spread_delta(result["spread"])    # positive = Asia ahead
+        st.metric(
+            f"🌏 Asia (North Asia, JKM), via {result['asia_route']}",
+            dollars(result['netback_asia']),
+            delta=f"{delta_text} vs Europe",
+            delta_color=delta_colour,
+        )
+
+        # Column titles: tick the chosen route, flag Panama if closed
+        panama_title = "Via Panama"
+        if not inputs["panama_available"]:
+            panama_title += " (closed)"
+        cape_title = "Via Cape"
+        if result["asia_route"] == "Panama":
+            panama_title += " ✅"
+        else:
+            cape_title += " ✅"
+
+        asia_table = pd.DataFrame([
+            {"Item": "JKM", panama_title: money(inputs["jkm"]), cape_title: money(inputs["jkm"])},
+            {"Item": "Freight", panama_title: money(-inputs["freight_panama"]),
+             cape_title: money(-inputs["freight_cape"])},
+            {"Item": "Regas Asia", panama_title: money(-inputs["regas_asia"]),
+             cape_title: money(-inputs["regas_asia"])},
+            {"Item": "= Netback", panama_title: money(result["netback_asia_panama"]),
+             cape_title: money(result["netback_asia_cape"])},
+        ])
+        st.dataframe(asia_table, hide_index=True, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# 6. FOB cost and margins
+# ---------------------------------------------------------------------------
+
+def show_margins(result):
+    """Show the cost of the cargo at Sabine Pass and the margin of the best destination."""
+    st.subheader("FOB cost and margins")
+
+    tile1, tile2, tile3, tile4 = st.columns(4)
+
+    tile1.metric("FOB variable", dollars(result['fob_variable']),
+                 help="115% of Henry Hub: the cost of the feed gas. "
+                      "The only cost still avoidable by cancelling.")
+    tile2.metric("FOB full", dollars(result['fob_full']),
+                 help="115% HH + liquefaction fee: full cost including the sunk fee.")
+    tile3.metric("Margin (variable)", dollars(result['margin_variable']),
+                 delta="lift" if result["decision"] == "LIFT" else "cancel",
+                 delta_color="normal" if result["decision"] == "LIFT" else "inverse",
+                 help="Best netback minus 115% HH. Below zero means cancel the cargo.")
+    tile4.metric("Margin (full)", dollars(result['margin_full']),
+                 help="Best netback minus full FOB. Below zero: the cargo loses money "
+                      "overall, but may still be worth lifting because the fee is sunk.")
+
+
+# ---------------------------------------------------------------------------
 # Main page: runs top to bottom
 # ---------------------------------------------------------------------------
 
@@ -241,3 +352,6 @@ show_price_panel([
     (prices["eurusd"], 4),
     (jkm_quote, 2),
 ])
+
+show_netbacks(result, inputs)
+show_margins(result)
