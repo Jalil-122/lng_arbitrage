@@ -96,6 +96,17 @@ def append_row(row, path=config.LOG_FILE_PATH):
     table.to_csv(path, mode="a", header=file_is_new, index=False)
 
 
+def last_refresh_time(path=config.LOG_FILE_PATH):
+    """Return the refresh time written in the log's last row, or None if the log is empty.
+
+    Used to avoid writing the same price fetch twice (e.g. two browser tabs open).
+    """
+    log = read_log(path)
+    if len(log) == 0:
+        return None
+    return log["refresh_time_utc"].iloc[-1]   # iloc[-1] = the last row
+
+
 def read_log(path=config.LOG_FILE_PATH):
     """Read the whole log as a table. Returns an empty table if there's no log yet."""
     if not os.path.exists(path):

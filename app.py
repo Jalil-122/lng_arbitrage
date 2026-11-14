@@ -325,14 +325,16 @@ def show_margins(result):
 def log_if_new_prices(fetched_at, prices, inputs, result):
     """Write one row to the log, but only once per price fetch.
 
-    Streamlit re-runs the page on every click. We remember (in session_state)
-    the fetch time we last logged, so changing an input doesn't add a row;
-    only new prices do (app start, every 5 minutes, or 'Refresh prices now').
+    Streamlit re-runs the page on every click, and each browser tab runs
+    its own copy of the page. So before writing, we check the log file
+    itself: if its last row already has this fetch time, we skip.
+    Result: changing an input, reloading, or opening two tabs never adds
+    a duplicate. Only new prices do (app start, every 5 minutes, or
+    'Refresh prices now').
     """
-    if st.session_state.get("last_logged_fetch") != fetched_at:
+    if arb_log.last_refresh_time() != arb_log.time_text(fetched_at):
         row = arb_log.build_log_row(fetched_at, prices, inputs, result)
         arb_log.append_row(row)
-        st.session_state["last_logged_fetch"] = fetched_at
 
 
 # The few columns shown on screen (the download has all of them)
@@ -373,15 +375,27 @@ def dashboard(inputs):
     prices, fetched_at = load_market_prices()
 
     next_refresh = fetched_at.timestamp() + config.REFRESH_SECONDS
-    st.caption(f"Prices fetched {fetched_at.strftime('%H:%M:%S UTC')} · "
+    st.caption(f"Last price check {fetched_at.strftime('%H:%M:%S UTC')} · "
                f"next auto refresh around "
                f"{datetime.fromtimestamp(next_refresh, timezone.utc).strftime('%H:%M UTC')}")
 
-    # If any live price is missing, we can't calculate. Say so clearly and stop here.
+    # The manual JKM ticket (needed in both branches below)
+    jkm_quote = market_data.manual_quote(
+        "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
+    )
+
+    # If any live price is missing, we can't calculate. Show which feeds are
+    # down (red lights), say so clearly, and stop here.
     missing = [quote.name for quote in prices.values() if quote.value is None]
     if missing:
         st.error(f"No price available for: {', '.join(missing)}. "
                  "Check your internet connection, then click 'Refresh prices now'.")
+        show_price_panel([
+            (prices["henry_hub"], 3),
+            (prices["ttf"], 2),
+            (prices["eurusd"], 4),
+            (jkm_quote, 2),
+        ])
         show_log()
         return   # leave the function: nothing more to draw
 
@@ -394,13 +408,10 @@ def dashboard(inputs):
 
     show_verdict(result, inputs["threshold"])
 
-    # Wrap the converted TTF and the manual JKM as Quotes too,
+    # Wrap the converted TTF as a Quote too,
     # so every price on screen carries a source, timestamp and light.
     ttf_usd_quote = market_data.derived_quote(
         "TTF", result["ttf_usd"], "USD/MMBtu", [prices["ttf"], prices["eurusd"]]
-    )
-    jkm_quote = market_data.manual_quote(
-        "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
     )
 
     show_price_panel([

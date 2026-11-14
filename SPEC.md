@@ -172,7 +172,7 @@ Defaults are **placeholders** chosen to be roughly realistic. You can edit all o
   `refresh_time_utc, hh, hh_ts, hh_status, ttf_eur_mwh, ttf_ts, ttf_status, eurusd, eurusd_ts, eurusd_status, ttf_usd, jkm, freight_nwe, freight_panama, freight_cape, regas_eu, regas_asia, liq_fee, panama_available, fob_variable, fob_full, netback_eu, netback_asia, asia_route, spread, verdict, margin_variable, margin_full`
 - Known limitations (accepted for V1):
   - Streamlit only refreshes while the page is open in a browser, so history only builds while the app is running.
-  - Two open browser tabs would log twice.
+  - ~~Two open browser tabs would log twice.~~ Fixed in V1: before writing, the app checks the log's last row, so one price fetch = one row, whatever the number of tabs.
   - On Streamlit Cloud the CSV would be wiped on restart. That will be dealt with before any deployment.
 
 ## 10. File structure (V1)

@@ -55,6 +55,14 @@ def test_append_creates_file_then_adds_rows(tmp_path):
     assert list(log.columns) == arb_log.LOG_COLUMNS    # header written once, correctly
 
 
+def test_last_refresh_time_reads_the_last_row(tmp_path):
+    log_file = str(tmp_path / "arb_log.csv")
+    assert arb_log.last_refresh_time(path=log_file) is None   # no log yet
+
+    arb_log.append_row(make_row(), path=log_file)
+    assert arb_log.last_refresh_time(path=log_file) == "2026-11-13 15:00:00 UTC"
+
+
 def test_reading_missing_log_gives_empty_table(tmp_path):
     log = arb_log.read_log(path=str(tmp_path / "nothing.csv"))
     assert len(log) == 0

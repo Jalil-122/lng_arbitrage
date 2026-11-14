@@ -54,6 +54,41 @@ def test_manual_quote_is_labelled_user_input():
     assert quote.status == "fresh"   # just changed
 
 
+class BrokenTicker:
+    """A fake yfinance Ticker that always fails, like having no internet."""
+    def __init__(self, ticker):
+        pass
+
+    def history(self, **kwargs):
+        raise ConnectionError("no internet")
+
+
+def test_failed_fetch_never_crashes(monkeypatch):
+    # monkeypatch (a pytest feature) swaps yfinance's Ticker for our broken
+    # one, only during this test
+    monkeypatch.setattr(market_data.yf, "Ticker", BrokenTicker)
+    market_data._last_good_quotes.clear()   # pretend we never had a price
+
+    quote = market_data.fetch_yfinance_quote("Henry Hub", "NG=F", "USD/MMBtu")
+
+    assert quote.value is None
+    assert quote.status == "stale"
+
+
+def test_failed_fetch_keeps_last_good_price_marked_stale(monkeypatch):
+    # Pretend an earlier fetch succeeded, 2 minutes ago (so it was fresh)
+    market_data._last_good_quotes["NG=F"] = market_data.Quote(
+        "Henry Hub", 3.23, "USD/MMBtu", "yfinance (delayed)",
+        datetime.now(timezone.utc) - timedelta(minutes=2), "fresh")
+    monkeypatch.setattr(market_data.yf, "Ticker", BrokenTicker)
+
+    quote = market_data.fetch_yfinance_quote("Henry Hub", "NG=F", "USD/MMBtu")
+
+    assert quote.value == 3.23          # the old price is kept...
+    assert quote.status == "stale"      # ...but clearly flagged red
+    market_data._last_good_quotes.clear()
+
+
 def test_boundaries():
     # Exactly 20 min old is no longer fresh; exactly 60 min old is stale
     assert market_data.quote_status(NOW - timedelta(minutes=20), now=NOW) == "delayed"
