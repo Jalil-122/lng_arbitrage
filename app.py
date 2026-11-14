@@ -58,12 +58,27 @@ def load_market_prices():
 #   "costs"      -> the freight, regas and fee last used (to prefill the pop-up)
 #   "evaluation" -> the last evaluation (inputs, result, time), shown on the page
 
+FREIGHT_SIMPLE = "Simple ($/MMBtu)"
+FREIGHT_DETAILED = "Detailed (charter model)"
+
+
 def default_costs():
     """The cost assumptions from config.py, used until the trader enters their own."""
     return {
+        "freight_mode": FREIGHT_SIMPLE,
+        # Simple mode: freight typed directly in $/MMBtu
         "freight_nwe": config.DEFAULT_FREIGHT_NWE,
         "freight_panama": config.DEFAULT_FREIGHT_PANAMA,
         "freight_cape": config.DEFAULT_FREIGHT_CAPE,
+        # Detailed mode: voyage inputs
+        "cargo_mmbtu": config.DEFAULT_CARGO_MMBTU,
+        "charter_rate": config.DEFAULT_CHARTER_RATE,
+        "boil_off_pct_per_day": config.DEFAULT_BOIL_OFF_PCT_PER_DAY,
+        "days_nwe": config.DEFAULT_DAYS_NWE,
+        "days_panama": config.DEFAULT_DAYS_PANAMA,
+        "days_cape": config.DEFAULT_DAYS_CAPE,
+        "panama_toll": config.DEFAULT_PANAMA_TOLL,
+        # Both modes
         "panama_available": config.DEFAULT_PANAMA_AVAILABLE,
         "regas_europe": config.DEFAULT_REGAS_EUROPE,
         "regas_asia": config.DEFAULT_REGAS_ASIA,
@@ -74,7 +89,51 @@ def default_costs():
 
 def current_costs():
     """The latest cost assumptions: the trader's last ones, or the defaults."""
-    return st.session_state.get("costs", default_costs())
+    # {**defaults, **saved}: start from the defaults, then overwrite with what was saved
+    return {**default_costs(), **st.session_state.get("costs", {})}
+
+
+def arb_inputs(gas, costs):
+    """Turn gas prices + cost assumptions into the inputs arb_calc needs.
+
+    Simple mode: freight as typed, no boil-off.
+    Detailed mode: freight and boil-off calculated from the voyage inputs.
+
+    Returns two things: (inputs for calculate_arb, freight build-up or None).
+    """
+    if costs["freight_mode"] == FREIGHT_DETAILED:
+        build_up = arb_calc.detailed_freight(
+            charter_rate=costs["charter_rate"],
+            cargo_mmbtu=costs["cargo_mmbtu"],
+            boil_off_pct_per_day=costs["boil_off_pct_per_day"],
+            days_nwe=costs["days_nwe"],
+            days_panama=costs["days_panama"],
+            days_cape=costs["days_cape"],
+            panama_toll=costs["panama_toll"],
+        )
+        freight = {route: build_up[route]["freight"] for route in build_up}
+        boil_off = {route: build_up[route]["boil_off"] for route in build_up}
+    else:
+        build_up = None
+        freight = {"nwe": costs["freight_nwe"], "panama": costs["freight_panama"],
+                   "cape": costs["freight_cape"]}
+        boil_off = {"nwe": 0.0, "panama": 0.0, "cape": 0.0}
+
+    inputs = {
+        **gas,
+        "freight_nwe": freight["nwe"],
+        "freight_panama": freight["panama"],
+        "freight_cape": freight["cape"],
+        "boil_off_nwe": boil_off["nwe"],
+        "boil_off_panama": boil_off["panama"],
+        "boil_off_cape": boil_off["cape"],
+        "panama_available": costs["panama_available"],
+        "regas_europe": costs["regas_europe"],
+        "regas_asia": costs["regas_asia"],
+        "liquefaction_fee": costs["liquefaction_fee"],
+        "threshold": costs["threshold"],
+    }
+    return inputs, build_up
 
 
 def market_gas_prices(prices):
@@ -96,15 +155,17 @@ def market_gas_prices(prices):
 def make_evaluation(gas, costs, sources, indicative):
     """Run the arb calculation and pack everything the screens need.
 
-    gas: the four gas prices used; costs: freight, regas, fee, threshold
+    gas: the four gas prices used; costs: freight mode, freight/voyage inputs, fees
     sources: for each gas price, "market" or "your input"
     indicative: True if this is the automatic case (no evaluation by the trader yet)
     """
-    inputs = {**gas, **costs}   # {**a, **b} merges two dictionaries into one
+    inputs, build_up = arb_inputs(gas, costs)
     result = arb_calc.calculate_arb(**inputs)
     return {
         "time": datetime.now(timezone.utc),
-        "inputs": inputs,
+        "inputs": inputs,       # what the maths used (incl. calculated freight)
+        "costs": costs,         # what the trader entered (incl. freight mode)
+        "build_up": build_up,   # freight build-up per route (Detailed mode), or None
         "result": result,
         "sources": sources,
         "indicative": indicative,
@@ -205,70 +266,114 @@ def evaluate_dialog(prices):
     if missing:
         st.warning("Some market prices are unavailable (no internet?). Type them in yourself.")
 
-    # st.form groups inputs: nothing is calculated until the Evaluate button is pressed
-    with st.form("evaluate_form"):
-        st.markdown("**1. Gas prices**")
+    # Every change in the pop-up re-runs only the pop-up (it's cheap: nothing is
+    # calculated until Evaluate). That lets the freight switch show the right boxes at once.
+    st.markdown("**1. Gas prices**")
+    c1, c2, c3, c4 = st.columns(4)
+    henry_hub = c1.number_input("Henry Hub", min_value=0.0, step=0.05, format="%.3f",
+                                value=market["henry_hub"] or 0.0)
+    ttf = c2.number_input("TTF (EUR/MWh)", min_value=0.0, step=0.50, format="%.2f",
+                          value=market["ttf_eur_mwh"] or 0.0)
+    eurusd = c3.number_input("EURUSD", min_value=0.0, step=0.005, format="%.4f",
+                             value=market["eurusd"] or 0.0)
+    jkm = c4.number_input("JKM", min_value=0.0, step=0.05, format="%.3f",
+                          value=market["jkm"])
+
+    st.markdown("**2. Freight (Sabine Pass →)**")
+    freight_mode = st.radio("Freight mode", [FREIGHT_SIMPLE, FREIGHT_DETAILED], horizontal=True,
+                            index=[FREIGHT_SIMPLE, FREIGHT_DETAILED].index(costs["freight_mode"]),
+                            label_visibility="collapsed")
+
+    # Start from the last costs; the boxes shown below overwrite the ones they cover.
+    # (The other mode's values are kept, so switching back remembers them.)
+    new_costs = dict(costs, freight_mode=freight_mode)
+
+    if freight_mode == FREIGHT_SIMPLE:
+        c1, c2, c3 = st.columns(3)
+        new_costs["freight_nwe"] = c1.number_input(
+            "North-West Europe", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+            value=costs["freight_nwe"])
+        new_costs["freight_panama"] = c2.number_input(
+            "North Asia via Panama", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+            value=costs["freight_panama"])
+        new_costs["freight_cape"] = c3.number_input(
+            "North Asia via Cape", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+            value=costs["freight_cape"])
+    else:
+        c1, c2, c3 = st.columns(3)
+        new_costs["charter_rate"] = c1.number_input(
+            "Charter rate ($/day)", min_value=0, step=5_000, value=int(costs["charter_rate"]))
+        new_costs["cargo_mmbtu"] = c2.number_input(
+            "Cargo loaded (MMBtu)", min_value=1, step=100_000, value=int(costs["cargo_mmbtu"]))
+        new_costs["boil_off_pct_per_day"] = c3.number_input(
+            "Boil-off (% per laden day)", min_value=0.0, step=0.01, format="%.2f",
+            value=float(costs["boil_off_pct_per_day"]))
         c1, c2, c3, c4 = st.columns(4)
-        henry_hub = c1.number_input("Henry Hub", min_value=0.0, step=0.05, format="%.3f",
-                                    value=market["henry_hub"] or 0.0)
-        ttf = c2.number_input("TTF (EUR/MWh)", min_value=0.0, step=0.50, format="%.2f",
-                              value=market["ttf_eur_mwh"] or 0.0)
-        eurusd = c3.number_input("EURUSD", min_value=0.0, step=0.005, format="%.4f",
-                                 value=market["eurusd"] or 0.0)
-        jkm = c4.number_input("JKM", min_value=0.0, step=0.05, format="%.3f",
-                              value=market["jkm"])
+        new_costs["days_nwe"] = c1.number_input(
+            "Days to NWE (one way)", min_value=1, step=1, value=int(costs["days_nwe"]))
+        new_costs["days_panama"] = c2.number_input(
+            "Days to Asia via Panama", min_value=1, step=1, value=int(costs["days_panama"]))
+        new_costs["days_cape"] = c3.number_input(
+            "Days to Asia via Cape", min_value=1, step=1, value=int(costs["days_cape"]))
+        new_costs["panama_toll"] = c4.number_input(
+            "Panama toll ($ per transit)", min_value=0, step=50_000, value=int(costs["panama_toll"]))
 
-        st.markdown("**2. Freight (Sabine Pass →)**")
-        c1, c2, c3 = st.columns(3)
-        freight_nwe = c1.number_input("North-West Europe", min_value=0.0, step=config.INPUT_STEP,
-                                      format="%.2f", value=costs["freight_nwe"])
-        freight_panama = c2.number_input("North Asia via Panama", min_value=0.0, step=config.INPUT_STEP,
-                                         format="%.2f", value=costs["freight_panama"])
-        freight_cape = c3.number_input("North Asia via Cape", min_value=0.0, step=config.INPUT_STEP,
-                                       format="%.2f", value=costs["freight_cape"])
-        panama_unavailable = st.toggle("Panama Canal unavailable",
-                                       value=not costs["panama_available"])
+    new_costs["panama_available"] = not st.toggle("Panama Canal unavailable",
+                                                  value=not costs["panama_available"])
 
-        st.markdown("**3. Fees**")
-        c1, c2, c3 = st.columns(3)
-        regas_europe = c1.number_input("Regas Europe", min_value=0.0, step=config.INPUT_STEP,
-                                       format="%.2f", value=costs["regas_europe"])
-        regas_asia = c2.number_input("Regas Asia", min_value=0.0, step=config.INPUT_STEP,
-                                     format="%.2f", value=costs["regas_asia"])
-        liquefaction_fee = c3.number_input("Liquefaction fee", min_value=0.0, step=config.INPUT_STEP,
-                                           format="%.2f", value=costs["liquefaction_fee"])
+    st.markdown("**3. Fees**")
+    c1, c2, c3 = st.columns(3)
+    new_costs["regas_europe"] = c1.number_input(
+        "Regas Europe", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+        value=costs["regas_europe"])
+    new_costs["regas_asia"] = c2.number_input(
+        "Regas Asia", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+        value=costs["regas_asia"])
+    new_costs["liquefaction_fee"] = c3.number_input(
+        "Liquefaction fee", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+        value=costs["liquefaction_fee"])
 
-        with st.expander("Settings"):   # a section you can fold open/closed
-            threshold = st.number_input("Indifference threshold", min_value=0.0,
-                                        step=config.INPUT_STEP, format="%.2f",
-                                        value=costs["threshold"])
+    with st.expander("Settings"):   # a section you can fold open/closed
+        new_costs["threshold"] = st.number_input(
+            "Indifference threshold", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
+            value=costs["threshold"])
 
-        evaluate_clicked = st.form_submit_button("Evaluate", type="primary", width="stretch")
-
-    if evaluate_clicked:
+    if st.button("Evaluate", type="primary", width="stretch"):
         gas = {"henry_hub": henry_hub, "ttf_eur_mwh": ttf, "eurusd": eurusd, "jkm": jkm}
         sources = {name: source_of(gas[name], market[name]) for name in gas}
-        new_costs = {
-            "freight_nwe": freight_nwe,
-            "freight_panama": freight_panama,
-            "freight_cape": freight_cape,
-            "panama_available": not panama_unavailable,
-            "regas_europe": regas_europe,
-            "regas_asia": regas_asia,
-            "liquefaction_fee": liquefaction_fee,
-            "threshold": threshold,
-        }
         st.session_state["costs"] = new_costs
         st.session_state["evaluation"] = make_evaluation(gas, new_costs, sources, indicative=False)
         st.session_state["show_result_in_popup"] = True
 
-    # Show the answer inside the pop-up. (We use session_state, not
-    # evaluate_clicked, so the answer stays visible when Close is clicked.)
+    # Show the answer inside the pop-up. (We use session_state, not the button,
+    # so the answer stays visible when Close is clicked.)
     if st.session_state.get("show_result_in_popup"):
         evaluation = st.session_state["evaluation"]
         show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
+        if evaluation["build_up"] is not None:
+            show_freight_build_up(evaluation["build_up"], evaluation["inputs"]["panama_available"])
         if st.button("Close and see the full breakdown", width="stretch"):
             st.rerun()   # re-running the whole page closes the pop-up
+
+
+def show_freight_build_up(build_up, panama_available):
+    """Table: how freight and boil-off were built for each route (Detailed mode)."""
+    names = {"nwe": "NWE", "panama": "Asia via Panama", "cape": "Asia via Cape"}
+    rows = []
+    for route, name in names.items():
+        voyage = build_up[route]
+        if route == "panama" and not panama_available:
+            name += " (closed)"
+        rows.append({
+            "Route": name,
+            "Round trip (days)": voyage["round_trip_days"],
+            "Charter ($m)": f"{voyage['charter_cost'] / 1e6:.2f}",
+            "Canal tolls ($m)": f"{voyage['canal_cost'] / 1e6:.2f}",
+            "Freight ($/MMBtu)": f"{voyage['freight']:.3f}",
+            "Boil-off (%)": f"{voyage['boil_off'] * 100:.1f}",
+        })
+    st.markdown("**Freight build-up**")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
 # ---------------------------------------------------------------------------
@@ -316,11 +421,28 @@ def show_sidebar_summary(evaluation):
     ]))
 
     sb.subheader("Costs used")
+    costs = evaluation["costs"]
     panama_text = "open" if inputs["panama_available"] else "**closed**"
-    sb.markdown(markdown_table([
-        ("Freight NWE", f"{inputs['freight_nwe']:.2f}"),
-        ("Freight Asia via Panama", f"{inputs['freight_panama']:.2f} (canal {panama_text})"),
-        ("Freight Asia via Cape", f"{inputs['freight_cape']:.2f}"),
+    detailed = costs["freight_mode"] == FREIGHT_DETAILED
+
+    rows = [("Freight mode", "Detailed (charter model)" if detailed else "Simple ($/MMBtu)")]
+    if detailed:
+        rows += [
+            ("Charter rate", f"${costs['charter_rate']:,.0f}/day"),
+            ("Cargo loaded", f"{costs['cargo_mmbtu']:,.0f} MMBtu"),
+            ("Boil-off", f"{costs['boil_off_pct_per_day']:.2f}% per laden day"),
+            ("Days one way", f"NWE {costs['days_nwe']} · Panama {costs['days_panama']} "
+                             f"· Cape {costs['days_cape']}"),
+            ("Panama toll", f"${costs['panama_toll']:,.0f} per transit"),
+        ]
+    # In both modes: the freight actually used ($/MMBtu), plus boil-off if any
+    for label, route, extra in [("NWE", "nwe", ""), ("Asia via Panama", "panama", f" (canal {panama_text})"),
+                                ("Asia via Cape", "cape", "")]:
+        value = f"{inputs['freight_' + route]:.3f}"
+        if detailed:
+            value += f" · boil-off {inputs['boil_off_' + route] * 100:.1f}%"
+        rows.append((f"Freight {label}", value + extra))
+    sb.markdown(markdown_table(rows + [
         ("Regas Europe", f"{inputs['regas_europe']:.2f}"),
         ("Regas Asia", f"{inputs['regas_asia']:.2f}"),
         ("Liquefaction fee", f"{inputs['liquefaction_fee']:.2f}"),
@@ -365,8 +487,11 @@ def show_netbacks(result, inputs):
     Only displays numbers already calculated in arb_calc.py.
     """
     st.subheader("Netbacks at Sabine Pass")
-    st.caption("Netback = what the cargo is worth back at Sabine Pass, in USD/MMBtu. "
-               "The prices and costs used are listed in the sidebar.")
+    st.caption("Netback = what the cargo is worth back at Sabine Pass, per MMBtu loaded, in "
+               "USD/MMBtu. The prices and costs used are listed in the sidebar.")
+
+    # Boil-off lines only appear when there is boil-off (Detailed freight mode)
+    has_boil_off = (inputs["boil_off_nwe"] + inputs["boil_off_panama"] + inputs["boil_off_cape"]) > 0
 
     # st.columns(2) splits the page into two side-by-side boxes
     europe_box, asia_box = st.columns(2)
@@ -379,13 +504,18 @@ def show_netbacks(result, inputs):
             delta=f"{delta_text} vs Asia",
             delta_color=delta_colour,
         )
-        europe_table = pd.DataFrame([
+        europe_rows = [
             {"Item": "TTF (converted)", "USD/MMBtu": money(result["ttf_usd"])},
-            {"Item": "Freight to NWE", "USD/MMBtu": money(-inputs["freight_nwe"])},
             {"Item": "Regas Europe", "USD/MMBtu": money(-inputs["regas_europe"])},
+        ]
+        if has_boil_off:   # only shown in Detailed freight mode
+            europe_rows.append({"Item": "Boil-off loss",
+                                "USD/MMBtu": money(-result["boil_off_loss_europe"])})
+        europe_rows += [
+            {"Item": "Freight to NWE", "USD/MMBtu": money(-inputs["freight_nwe"])},
             {"Item": "= Netback", "USD/MMBtu": money(result["netback_europe"])},
-        ])
-        st.dataframe(europe_table, hide_index=True, width="stretch")
+        ]
+        st.dataframe(pd.DataFrame(europe_rows), hide_index=True, width="stretch")
 
     with asia_box:
         delta_text, delta_colour = spread_delta(result["spread"])    # positive = Asia ahead
@@ -406,16 +536,22 @@ def show_netbacks(result, inputs):
         else:
             cape_title += " ✅"
 
-        asia_table = pd.DataFrame([
+        asia_rows = [
             {"Item": "JKM", panama_title: money(inputs["jkm"]), cape_title: money(inputs["jkm"])},
-            {"Item": "Freight", panama_title: money(-inputs["freight_panama"]),
-             cape_title: money(-inputs["freight_cape"])},
             {"Item": "Regas Asia", panama_title: money(-inputs["regas_asia"]),
              cape_title: money(-inputs["regas_asia"])},
+        ]
+        if has_boil_off:
+            asia_rows.append({"Item": "Boil-off loss",
+                              panama_title: money(-result["boil_off_loss_panama"]),
+                              cape_title: money(-result["boil_off_loss_cape"])})
+        asia_rows += [
+            {"Item": "Freight", panama_title: money(-inputs["freight_panama"]),
+             cape_title: money(-inputs["freight_cape"])},
             {"Item": "= Netback", panama_title: money(result["netback_asia_panama"]),
              cape_title: money(result["netback_asia_cape"])},
-        ])
-        st.dataframe(asia_table, hide_index=True, width="stretch")
+        ]
+        st.dataframe(pd.DataFrame(asia_rows), hide_index=True, width="stretch")
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +697,8 @@ def live_market():
 
     if live_ok:
         # Log the MARKET arb: live prices with the latest cost assumptions
-        market_inputs = {**market_gas_prices(prices), **current_costs()}
+        # (same freight mode as the last evaluation: Simple, or Detailed with boil-off)
+        market_inputs, _ = arb_inputs(market_gas_prices(prices), current_costs())
         market_result = arb_calc.calculate_arb(**market_inputs)
         log_if_new_prices(fetched_at, prices, market_inputs, market_result)
     else:

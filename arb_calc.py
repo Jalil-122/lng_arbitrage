@@ -210,7 +210,16 @@ def calculate_arb(
     margin_variable = best_netback - fob_variable   # vs avoidable cost
     margin_full = best_netback - fob_full           # vs full cost incl. fee
 
+    # 7. Boil-off loss per route, in $/MMBtu loaded (for display):
+    #    the value of the gas that evaporated = (hub - regas) x boil-off share
+    boil_off_loss_europe = (ttf_usd - regas_europe) * boil_off_nwe
+    boil_off_loss_panama = (jkm - regas_asia) * boil_off_panama
+    boil_off_loss_cape = (jkm - regas_asia) * boil_off_cape
+
     return {
+        "boil_off_loss_europe": boil_off_loss_europe,
+        "boil_off_loss_panama": boil_off_loss_panama,
+        "boil_off_loss_cape": boil_off_loss_cape,
         "ttf_usd": ttf_usd,
         "fob_variable": fob_variable,
         "fob_full": fob_full,

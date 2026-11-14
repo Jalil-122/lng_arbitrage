@@ -181,3 +181,12 @@ def test_boil_off_flips_base_case_to_europe():
     assert result["asia_route"] == "Panama"
     assert result["spread"] == pytest.approx(-0.111854, abs=1e-6)
     assert result["winner"] == "Europe"
+
+    # Boil-off loss = value of the evaporated gas: (hub - regas) x share
+    #   Europe: (11.283705 - 0.45) x 0.014 = 0.151672
+    #   Cape:   (12.00 - 0.35)     x 0.040 = 0.466
+    assert result["boil_off_loss_europe"] == pytest.approx(0.151672, abs=1e-6)
+    assert result["boil_off_loss_cape"] == pytest.approx(0.466)
+    # The table must add up: hub - regas - boil-off loss - freight = netback
+    assert (result["ttf_usd"] - 0.45 - result["boil_off_loss_europe"] - b["nwe"]["freight"]
+            == pytest.approx(result["netback_europe"]))
