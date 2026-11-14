@@ -190,3 +190,53 @@ def test_boil_off_flips_base_case_to_europe():
     # The table must add up: hub - regas - boil-off loss - freight = netback
     assert (result["ttf_usd"] - 0.45 - result["boil_off_loss_europe"] - b["nwe"]["freight"]
             == pytest.approx(result["netback_europe"]))
+
+
+# ---------------------------------------------------------------------------
+# V2: breakevens and spread curves (SPEC.md 12.4, done criterion 6)
+# ---------------------------------------------------------------------------
+
+def test_breakeven_jkm_simple_mode():
+    # Europe netback 9.933705. Cheapest Asia route is Panama (freight 1.60):
+    #   JKM = regas 0.35 + (9.933705 + 1.60) / (1 - 0) = 11.883705
+    breakeven = arb_calc.breakeven_jkm(BASE_INPUTS)
+    assert breakeven == pytest.approx(11.883705, abs=1e-6)
+    # ...and at that JKM the spread really is zero
+    assert arb_calc.calculate_arb(**dict(BASE_INPUTS, jkm=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+
+
+def test_breakeven_jkm_panama_closed_uses_cape():
+    # Panama closed: only Cape (freight 2.10): 0.35 + 9.933705 + 2.10 = 12.383705
+    inputs = dict(BASE_INPUTS, panama_available=False)
+    assert arb_calc.breakeven_jkm(inputs) == pytest.approx(12.383705, abs=1e-6)
+
+
+def test_breakeven_ttf_simple_mode():
+    # Asia netback 10.05 (Panama). Europe parity:
+    #   TTF_usd = 0.45 + (10.05 + 0.90) = 11.40 $/MMBtu
+    #   in EUR/MWh: 11.40 x 3.412 / 1.10 = 35.360727
+    breakeven = arb_calc.breakeven_ttf(BASE_INPUTS)
+    assert breakeven == pytest.approx(35.360727, abs=1e-6)
+    assert arb_calc.calculate_arb(**dict(BASE_INPUTS, ttf_eur_mwh=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+
+
+def test_breakeven_jkm_detailed_mode_with_boil_off():
+    # Europe netback 10.042033 (with boil-off). Panama: freight 1.428571, boil-off 2.5%:
+    #   JKM = 0.35 + (10.042033 + 1.428571) / 0.975 = 12.114722
+    b = arb_calc.detailed_freight(**VOYAGE)
+    inputs = dict(
+        BASE_INPUTS,
+        freight_nwe=b["nwe"]["freight"], freight_panama=b["panama"]["freight"],
+        freight_cape=b["cape"]["freight"], boil_off_nwe=b["nwe"]["boil_off"],
+        boil_off_panama=b["panama"]["boil_off"], boil_off_cape=b["cape"]["boil_off"],
+    )
+    breakeven = arb_calc.breakeven_jkm(inputs)
+    assert breakeven == pytest.approx(12.114722, abs=1e-6)
+    assert arb_calc.calculate_arb(**dict(inputs, jkm=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+
+
+def test_spread_curve_rises_with_jkm():
+    prices, spreads = arb_calc.spread_curve(BASE_INPUTS, "jkm", 10.0, 14.0, points=5)
+    assert prices == [10.0, 11.0, 12.0, 13.0, 14.0]
+    assert spreads == sorted(spreads)                              # higher JKM -> Asia better
+    assert spreads[2] == pytest.approx(0.116295, abs=1e-6)         # JKM 12 = the base case

@@ -644,6 +644,45 @@ def show_margins(result):
 
 
 # ---------------------------------------------------------------------------
+# 7b. Sensitivity: breakeven charts
+# ---------------------------------------------------------------------------
+
+def show_sensitivity(evaluation):
+    """Two charts: the spread as JKM moves, and as TTF moves (everything else fixed)."""
+    inputs = evaluation["inputs"]
+    result = evaluation["result"]
+
+    section_header("Sensitivity · breakeven")
+    st.caption("How the Asia − Europe spread changes if one price moves and everything else "
+               "stays as in this evaluation. Shaded band = Indifferent zone (± threshold).")
+
+    jkm_box, ttf_box = st.columns(2)
+
+    # JKM: the price where Asia starts to beat Europe
+    breakeven_jkm = arb_calc.breakeven_jkm(inputs)
+    low, high = charts.chart_range(inputs["jkm"], breakeven_jkm)
+    prices, spreads = arb_calc.spread_curve(inputs, "jkm", low, high)
+    jkm_box.plotly_chart(
+        charts.breakeven_chart(prices, spreads, inputs["jkm"], result["spread"], breakeven_jkm,
+                               inputs["threshold"], "JKM ($/MMBtu)"),
+        width="stretch", config={"displayModeBar": False})
+    jkm_box.caption(f"Asia wins above JKM **${breakeven_jkm:.2f}** "
+                    f"(today {inputs['jkm'] - breakeven_jkm:+.2f} from breakeven).")
+
+    # TTF: the price (EUR/MWh) where Europe starts to beat Asia
+    breakeven_ttf = arb_calc.breakeven_ttf(inputs)
+    low, high = charts.chart_range(inputs["ttf_eur_mwh"], breakeven_ttf)
+    prices, spreads = arb_calc.spread_curve(inputs, "ttf_eur_mwh", low, high)
+    ttf_box.plotly_chart(
+        charts.breakeven_chart(prices, spreads, inputs["ttf_eur_mwh"], result["spread"],
+                               breakeven_ttf, inputs["threshold"], "TTF (EUR/MWh)",
+                               unit_prefix="€"),
+        width="stretch", config={"displayModeBar": False})
+    ttf_box.caption(f"Europe wins above TTF **€{breakeven_ttf:.2f}/MWh** "
+                    f"(today {inputs['ttf_eur_mwh'] - breakeven_ttf:+.2f} from breakeven).")
+
+
+# ---------------------------------------------------------------------------
 # 8. Live market panel
 # ---------------------------------------------------------------------------
 
@@ -826,6 +865,7 @@ else:
 
     show_netbacks(evaluation["result"], evaluation["inputs"])
     show_margins(evaluation["result"])
+    show_sensitivity(evaluation)
 
 st.divider()   # a thin horizontal line
 live_market()

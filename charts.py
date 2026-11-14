@@ -125,3 +125,77 @@ def route_map(result, inputs):
         showlegend=False,
     )
     return figure
+
+
+# ---------------------------------------------------------------------------
+# Breakeven chart (V2): how the spread moves with one price
+# ---------------------------------------------------------------------------
+
+GRID = "#1F2630"
+TEXT = "#D9DEE5"
+GREEN = "#2EBD85"
+RED = "#F6465D"
+
+
+def chart_range(current, breakeven, pct=config.SENSITIVITY_RANGE_PCT):
+    """Pick the price range to draw: +/- pct around today, widened to show the breakeven."""
+    low = current * (1 - pct)
+    high = current * (1 + pct)
+    margin = current * 0.05
+    return min(low, breakeven - margin), max(high, breakeven + margin)
+
+
+def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
+                    threshold, price_label, unit_prefix="$"):
+    """Line chart: spread (Asia - Europe) as one price moves, everything else fixed.
+
+    Marks the breakeven (spread = 0), the +/- threshold "indifferent" band,
+    and where we are now.
+    """
+    figure = go.Figure()
+
+    # Shaded band: inside it, the verdict is "Indifferent"
+    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor="#5B6676", opacity=0.18,
+                     line_width=0)
+    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+
+    # The spread line
+    figure.add_trace(go.Scatter(
+        x=prices, y=spreads, mode="lines",
+        line={"color": ACCENT, "width": 2.5},
+        hovertemplate=f"{price_label} %{{x:.2f}}<br>Spread %{{y:+.2f}} $/MMBtu<extra></extra>",
+    ))
+
+    # Breakeven: dashed vertical line with its value
+    figure.add_vline(x=breakeven, line={"color": TEXT, "width": 1, "dash": "dash"})
+    figure.add_annotation(x=breakeven, y=1, yref="paper", yanchor="bottom", showarrow=False,
+                          text=f"Breakeven {unit_prefix}{breakeven:.2f}",
+                          font={"color": TEXT, "family": MONO, "size": 12})
+
+    # Today: a dot on the line
+    figure.add_trace(go.Scatter(
+        x=[current_price], y=[current_spread], mode="markers+text",
+        marker={"size": 10, "color": ACCENT, "line": {"width": 2, "color": "#0B0E13"}},
+        text=[f"Now {unit_prefix}{current_price:.2f}"], textposition="middle right",
+        textfont={"color": ACCENT, "family": MONO, "size": 12},
+        hoverinfo="skip",
+    ))
+
+    # Which side wins: labels in the corners
+    figure.add_annotation(x=0.01, y=0.97, xref="paper", yref="paper", showarrow=False,
+                          xanchor="left", text="ASIA WINS ↑",
+                          font={"color": GREEN, "family": MONO, "size": 11})
+    figure.add_annotation(x=0.01, y=0.03, xref="paper", yref="paper", showarrow=False,
+                          xanchor="left", text="EUROPE WINS ↓",
+                          font={"color": RED, "family": MONO, "size": 11})
+
+    figure.update_layout(
+        height=320,
+        margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        font={"color": TEXT, "family": MONO, "size": 11},
+        xaxis={"title": price_label, "gridcolor": GRID, "zeroline": False},
+        yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
+    )
+    return figure

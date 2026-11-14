@@ -235,3 +235,62 @@ def calculate_arb(
         "margin_variable": margin_variable,
         "margin_full": margin_full,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity (V2): breakevens and spread curves
+# ---------------------------------------------------------------------------
+# "inputs" below is the same dictionary calculate_arb takes (the evaluation's inputs).
+# inputs.get("boil_off_nwe", 0.0) means "the boil-off if it's there, otherwise 0"
+# (Simple mode may leave it out, just like calculate_arb's default).
+
+def breakeven_jkm(inputs):
+    """The JKM price (USD/MMBtu) at which Asia's best netback equals Europe's.
+
+    Asia netback for a route = (JKM - regas) x (1 - boil-off) - freight.
+    Setting it equal to the Europe netback and solving for JKM gives:
+        JKM = regas_asia + (netback_europe + freight) / (1 - boil-off)
+    Each open route gives one answer; the breakeven is the LOWEST one,
+    because the cheapest route reaches parity first.
+    """
+    result = calculate_arb(**inputs)
+    candidates = [
+        inputs["regas_asia"]
+        + (result["netback_europe"] + inputs["freight_cape"]) / (1 - inputs.get("boil_off_cape", 0.0))
+    ]
+    if inputs["panama_available"]:
+        candidates.append(
+            inputs["regas_asia"]
+            + (result["netback_europe"] + inputs["freight_panama"]) / (1 - inputs.get("boil_off_panama", 0.0))
+        )
+    return min(candidates)
+
+
+def breakeven_ttf(inputs):
+    """The TTF price (EUR/MWh) at which Europe's netback equals Asia's best netback.
+
+    Europe netback = (TTF_usd - regas) x (1 - boil-off) - freight. Solving for TTF:
+        TTF_usd = regas_europe + (netback_asia + freight_nwe) / (1 - boil-off_nwe)
+    then converted back to EUR/MWh: x 3.412 / EURUSD.
+    """
+    result = calculate_arb(**inputs)
+    ttf_usd = (inputs["regas_europe"]
+               + (result["netback_asia"] + inputs["freight_nwe"]) / (1 - inputs.get("boil_off_nwe", 0.0)))
+    return ttf_usd * config.MMBTU_PER_MWH / inputs["eurusd"]
+
+
+def spread_curve(inputs, price_name, low, high, points=config.SENSITIVITY_POINTS):
+    """Re-run the arb for a range of one price, keeping everything else fixed.
+
+    price_name: "jkm" or "ttf_eur_mwh"
+    Returns two lists: the prices tried, and the spread (Asia - Europe) at each.
+    """
+    prices = []
+    spreads = []
+    for i in range(points):
+        price = low + (high - low) * i / (points - 1)    # evenly spaced from low to high
+        changed = dict(inputs)                            # a copy, so we don't alter the original
+        changed[price_name] = price
+        prices.append(price)
+        spreads.append(calculate_arb(**changed)["spread"])
+    return prices, spreads

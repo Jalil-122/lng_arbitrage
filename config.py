@@ -135,3 +135,11 @@ ROUTE_POINTS = {
 
 # Where each route's netback label is written on the map
 ROUTE_LABEL_POINTS = {"nwe": (43.0, -42.0), "panama": (14.0, -118.0), "cape": (-27.0, 42.0)}
+
+
+# ---------------------------------------------------------------------------
+# 8. Sensitivity charts (V2)
+# ---------------------------------------------------------------------------
+
+SENSITIVITY_RANGE_PCT = 0.25   # charts show the price from -25% to +25% around today's level
+SENSITIVITY_POINTS = 61        # how many points each line is drawn with
