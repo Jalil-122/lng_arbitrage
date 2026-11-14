@@ -123,12 +123,17 @@ If Margin_variable < 0 → "CANCEL: netback does not cover 115% HH"
 Else                   → "LIFT and send to <winner>"
 ```
 
-## 7. Inputs (sidebar)
+## 7. Inputs ("Evaluate a cargo" pop-up)
 
-Defaults are **placeholders** chosen to be roughly realistic. You can edit all of them.
+All inputs are entered in a **pop-up** opened by the "🚢 Evaluate a cargo" button.
+Gas prices are **prefilled from the market** and editable. Costs are prefilled with
+the last values used (or the defaults below on first use).
 
 | Input | Default | Min | Step |
 |---|---|---|---|
+| Henry Hub | Live market (yfinance) | 0 | 0.05 |
+| TTF (EUR/MWh) | Live market (yfinance) | 0 | 0.50 |
+| EURUSD | Live market (yfinance) | 0 | 0.0050 |
 | JKM front month | Yahoo daily settlement (fallback 30.00) | 0 | 0.05 |
 | Liquefaction fee | 2.50 | 0 | 0.05 |
 | Freight, NWE | 0.90 | 0 | 0.05 |
@@ -138,32 +143,45 @@ Defaults are **placeholders** chosen to be roughly realistic. You can edit all o
 | Regas, Asia | 0.35 | 0 | 0.05 |
 | Panama unavailable (toggle) | off | | |
 | Indifference threshold | 0.10 | 0 | 0.05 |
-| "Refresh now" button | | | |
 
 ## 8. Screen layout (single page)
 
 **Header**
-- Title, last refresh time, and the next auto refresh time.
-- Note: "Front-month prices. yfinance data is delayed and indicative only."
+- Title and note: "Front-month prices. yfinance data is delayed and indicative only."
+- Two buttons: **🚢 Evaluate a cargo** (opens the pop-up) and **🔄 Refresh prices**.
 
-**1. Verdict banner** (top, large)
+**Pop-up "Evaluate a cargo"**
+- Sections: gas prices (prefilled from market), freight (3 routes + "Panama unavailable"), fees (regas Europe, regas Asia, liquefaction), settings (indifference threshold).
+- An **Evaluate** button shows the verdict banner **inside the pop-up** at once.
+- A **Close** button returns to the page, which now shows that evaluation.
+
+**Sidebar: read-only summary of the last evaluation** (no inputs)
+- When it was evaluated, and the verdict.
+- Prices used, each labelled "market" or "your input".
+- Costs used: freight per route, Panama status, regas, liquefaction fee.
+- Results: netbacks, chosen Asia route, FOB, margins.
+- Before any evaluation, it shows the *indicative* case (market prices + default costs).
+
+**1. Verdict banner** (top, large), for the last evaluation
 - Example: `LIFT → ASIA, wins by $0.42/MMBtu (via Cape)`, or `CANCEL`, or `LIFT → INDIFFERENT`.
 - Coloured: green when lifting, red when cancelling, grey when indifferent.
+- Says when it was evaluated, or that it is indicative (no evaluation yet).
 
-**2. Price panel**: one row per price
-| Price | Value | Unit | Source | Timestamp | Status |
-|---|---|---|---|---|---|
-- Status is shown as a light: 🟢 fresh, 🟡 delayed, 🔴 stale.
-- TTF appears twice: EUR/MWh (raw) and USD/MMBtu (converted).
-
-**3. Netback comparison**: two columns, Europe and Asia
+**2. Netback comparison**: two columns, Europe and Asia
 - Each shows a small cost stack: hub price, minus freight, minus regas, equals netback.
 - The Asia column shows Panama and Cape side by side and highlights the chosen route.
 
-**4. FOB and margins**
+**3. FOB and margins**
 - FOB variable, FOB full, margin over variable cost, margin over full cost.
 
-**5. Refresh log**
+**4. Live market panel** (refreshes every 5 minutes): one row per price
+| Status | Price | Value | Unit | Source | Timestamp | Age |
+|---|---|---|---|---|---|---|
+- Status is shown as a light: 🟢 fresh, 🟡 delayed, 🔴 stale.
+- TTF appears twice: EUR/MWh (raw) and USD/MMBtu (converted). JKM shows its daily settlement.
+
+**5. Refresh log** (the market arb history)
+- Each refresh logs the **live market** prices with the **latest cost assumptions** (from the last evaluation, or defaults).
 - The last 20 rows of `data/arb_log.csv`.
 - A button to download the full CSV.
 
@@ -182,7 +200,7 @@ Defaults are **placeholders** chosen to be roughly realistic. You can edit all o
 
 ```
 lng_arbitrage/
-├── app.py              # Streamlit screens only: layout, sidebar, display
+├── app.py              # Streamlit screens only: pop-up, sidebar summary, display
 ├── market_data.py      # THE data module: fetches prices, returns Quote objects
 ├── arb_calc.py         # Pure calculations: formulas in section 6, no fetching, no display
 ├── arb_log.py          # Appends one row per refresh to the CSV and reads it back
@@ -200,7 +218,7 @@ lng_arbitrage/
 
 1. `streamlit run app.py` opens the dashboard with no errors.
 2. HH, TTF and EURUSD load from yfinance, each with a source, timestamp and status light.
-3. Changing any sidebar input updates the netbacks and verdict at once.
+3. Evaluating a cargo in the pop-up shows the verdict in the pop-up, then updates the page and the sidebar summary.
 4. The verdict matches a hand calculation for at least one test case (covered by `tests/test_arb_calc.py`).
 5. The "Panama unavailable" toggle switches the Asia route to Cape.
 6. The app refreshes itself every 5 minutes, and each refresh adds one row to `data/arb_log.csv`.
