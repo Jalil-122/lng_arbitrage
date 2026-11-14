@@ -16,9 +16,9 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 |---|---|
 | **V1** ✅ done | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, "Evaluate a cargo" pop-up, auto refresh, a status light for each price, and a refresh log |
 | **V2** ✅ done (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
-| V3 | Historical arb analysis from the refresh log (and a scheduled logger if continuous history is needed). M+1 delivery-month pricing. |
+| **V3** (section 13) | Historical arb analysis (free monthly history from FRED + Yahoo: arb over time, win rates, seasonality) and M+1 delivery pricing |
 
-Sections 1–11 describe V1. Section 12 describes V2 and overrides V1 where they differ.
+Sections 1–11 describe V1. Section 12 describes V2 and section 13 describes V3; each overrides the earlier ones where they differ.
 
 ## 3. V1 decisions (agreed)
 
@@ -334,3 +334,90 @@ tests/           + tests for the freight/boil-off maths and the breakeven calcul
 6. The breakeven chart marks the breakeven JKM, which matches a hand calculation (covered by a test).
 7. The heatmap colours each cell by outcome and marks the current evaluation.
 8. Everything still works offline (typed prices) and `market_data.py` is still the only file importing yfinance.
+
+---
+
+## 13. V3 specification
+
+### 13.1 V3 decisions (agreed)
+
+| Topic | Decision |
+|---|---|
+| Scope | **Historical arb analysis** (arb over time, win rates, seasonality) and **M+1 delivery pricing** |
+| History source | **Free, monthly**: Europe gas and Henry Hub from **FRED** (IMF series), JKM from **Yahoo** (`JKM=F` daily, averaged by month). Bloomberg is paid and can't feed a website, so it is not used |
+| History period | From the first month all three series exist (JKM: **mid-2014**) to the latest month they all have |
+| Historical costs | The **current cost assumptions** (last evaluation, or defaults) applied to every month, and labelled as such. Freight/regas history is not free anywhere, so the history isolates how **gas prices** moved the arb |
+| Period selector | **1Y / 3Y / 5Y / All**. Win rates and seasonality follow the selection |
+| Background logger | **Not in V3** (the 5-minute log stays as it is) |
+| M+1 pricing | A **switch** in the pop-up: *Front month* (V1/V2 behaviour) or *M+1 delivery*. In M+1, **HH = front month** (the loading month M) and **TTF = the next contract month** (M+1), both from Yahoo contract tickers. **JKM** stays the editable daily settlement (Yahoo has no JKM contract months) |
+| Layout | Two **tabs**: "Evaluate a cargo" (everything from V1/V2) and "History" |
+| Data module rule | FRED and the contract-month tickers are fetched in `market_data.py` only, like Yahoo |
+
+### 13.2 History data sources
+
+| Series | Source | Ticker / ID | Unit | Used as |
+|---|---|---|---|---|
+| Europe gas price | FRED (IMF, TTF-based) | `PNGASEUUSDM` | USD/MMBtu, monthly | Europe hub price |
+| Henry Hub | FRED (IMF) | `PNGASUSUSDM` | USD/MMBtu, monthly | HH (FOB cost) |
+| JKM | Yahoo | `JKM=F`, daily → monthly average | USD/MMBtu | Asia hub price |
+
+- FRED data is downloaded as CSV from `https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>` (no account needed).
+- History is cached for **24 hours** (it only changes monthly).
+- If a source fails, the History tab says so and the rest of the app keeps working.
+- The Europe series is already in USD/MMBtu, so no EURUSD conversion is needed for history.
+
+### 13.3 Historical arb formulas
+
+For each month, the **same calculation as today** (sections 6 and 12.3), with:
+- Henry Hub = the FRED monthly HH, Europe price (USD) = the FRED monthly Europe price, JKM = the monthly average of Yahoo JKM;
+- freight, boil-off, regas, liquefaction fee, Panama status and threshold = the current assumptions.
+
+Outputs per month: netback Europe, netback Asia, Asia route, spread, outcome (Europe / Asia / Indifferent / Cancel), margin over variable cost.
+
+**Aggregations** (over the selected period):
+- **Win rates** = % of months for each outcome, overall and per calendar year.
+- **Seasonality** = the average spread for each calendar month (Jan … Dec), with how many months it is based on.
+
+### 13.4 M+1 contract months
+
+- Gas futures roll before the month starts, so the **front month = next calendar month** (e.g. on 14 Nov 2026 the front month is Dec-26). **M+1 = the month after** (Jan-27).
+- Yahoo contract tickers: `NG<code><yy>.NYM` and `TTF<code><yy>.NYM`, with month codes F G H J K M N Q U V X Z (Jan → Dec). Example: `TTFF27.NYM` = TTF Jan-27.
+- If the M+1 contract has no data, the TTF M+1 quote is shown 🔴 stale, the pop-up falls back to the front-month TTF, and says so.
+- Simplification: the few days around expiry (when the front month has already rolled) are not handled specially.
+
+### 13.5 Screens (changes from V2)
+
+**Tabs** at the top: **Evaluate a cargo** | **History**.
+
+**Pop-up**: a "Delivery pricing" switch: *Front month* / *M+1 delivery*. In M+1, the TTF box is prefilled with the M+1 contract and labelled with its month (e.g. "TTF Jan-27"). The sidebar summary shows which pricing was used.
+
+**Live market panel**: adds the TTF M+1 contract row (with its month, source, timestamp and light).
+
+**History tab**
+1. Period selector: 1Y / 3Y / 5Y / All.
+2. **Arb over time**: monthly spread (Asia − Europe) as bars coloured by outcome, with the ± threshold band. Hover shows the month, both netbacks and the route.
+3. **Win rates**: one tile per outcome (% of months), and a stacked bar per calendar year.
+4. **Seasonality**: average spread per calendar month, bars coloured by sign.
+5. A note on sources and on the "current costs applied to all months" assumption, and a CSV download of the monthly table.
+
+### 13.6 File changes (V3)
+
+```
+market_data.py   + contract-month quotes (NG/TTF M+1), FRED + Yahoo monthly history
+arb_calc.py      + historical arb per month, win rates, seasonality
+charts.py        + arb-over-time, win-rate and seasonality charts
+app.py           + tabs, delivery-pricing switch, History tab
+config.py        + FRED series IDs, month codes, history settings
+tests/           + month-code logic, history arb, win rates, seasonality (offline, with fake data)
+```
+
+### 13.7 Done criteria for V3
+
+1. The month-code logic gives the right tickers (e.g. 14 Nov 2026 → front `TTFZ26.NYM`, M+1 `TTFF27.NYM`), covered by tests.
+2. In M+1 mode the pop-up prefills TTF from the M+1 contract and labels it; Front month mode gives exactly the V2 results.
+3. The History tab loads monthly data from FRED and Yahoo from mid-2014, with sources and the cost assumption stated.
+4. The historical arb for a month matches a hand calculation (test with fake data, no internet).
+5. Win rates add up to 100% and match a hand count; seasonality averages match a hand calculation (tests).
+6. The period selector changes the charts, the win rates and the seasonality.
+7. If FRED or Yahoo history fails, the History tab says so and the Evaluate tab still works.
+8. `market_data.py` is still the only file that talks to a data source; all tests pass.
