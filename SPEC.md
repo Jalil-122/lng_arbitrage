@@ -15,7 +15,7 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 | Version | Scope |
 |---|---|
 | **V1** ✅ done | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, "Evaluate a cargo" pop-up, auto refresh, a status light for each price, and a refresh log |
-| **V2** (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
+| **V2** ✅ done (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
 | V3 | Historical arb analysis from the refresh log (and a scheduled logger if continuous history is needed). M+1 delivery-month pricing. |
 
 Sections 1–11 describe V1. Section 12 describes V2 and overrides V1 where they differ.
