@@ -19,8 +19,11 @@ All prices are in USD/MMBtu unless the name says otherwise.
 TICKER_HENRY_HUB = "NG=F"     # NYMEX Henry Hub natural gas, front month, USD/MMBtu
 TICKER_TTF = "TTF=F"          # ICE Dutch TTF gas, front month, EUR/MWh
 TICKER_EURUSD = "EURUSD=X"    # Euro to US dollar exchange rate (USD per 1 EUR)
+TICKER_JKM = "JKM=F"          # CME JKM LNG futures (settled on Platts JKM), USD/MMBtu.
+                              # Yahoo only has ONE price per day (the settlement), not live trades.
 
 SOURCE_YFINANCE = "yfinance (delayed)"   # label shown next to every yfinance price
+SOURCE_YFINANCE_DAILY = "yfinance (daily settlement)"   # label for once-a-day prices (JKM)
 SOURCE_USER = "User input"               # label shown next to every sidebar input
 
 
@@ -36,8 +39,8 @@ HH_MULTIPLIER = 1.15     # US LNG contracts pay 115% of Henry Hub for the feed g
 # 3. Default sidebar inputs (placeholders, all editable in the app)
 # ---------------------------------------------------------------------------
 
-DEFAULT_JKM = 30.00                # JKM front month (no free live source, so you enter it).
-                                   # Set near TTF in USD (~29.40 in Nov 2026) plus a small Asia premium.
+DEFAULT_JKM = 30.00                # JKM fallback: used only if Yahoo has no JKM settlement.
+                                   # Normally the sidebar starts at Yahoo's daily settlement.
 DEFAULT_LIQUEFACTION_FEE = 2.50    # Sabine Pass tolling fee (sunk for the offtaker)
 
 DEFAULT_FREIGHT_NWE = 0.90         # Sabine Pass -> North-West Europe

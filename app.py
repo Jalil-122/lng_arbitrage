@@ -54,8 +54,13 @@ def load_market_prices():
 # 2. Sidebar: the trader's inputs
 # ---------------------------------------------------------------------------
 
-def sidebar_inputs():
-    """Draw the sidebar and return every input in a dictionary (USD/MMBtu)."""
+def sidebar_inputs(jkm_prefill):
+    """Draw the sidebar and return every input in a dictionary (USD/MMBtu).
+
+    jkm_prefill: the starting value of the JKM box (Yahoo's daily settlement,
+    or the config default if Yahoo has none). Once you type your own number,
+    Streamlit keeps yours.
+    """
     sb = st.sidebar   # shorter name for the sidebar
 
     sb.header("Inputs")
@@ -64,8 +69,11 @@ def sidebar_inputs():
         st.cache_data.clear()   # forget the cached prices, so they're fetched again
 
     sb.subheader("Asia price")
-    jkm = sb.number_input("JKM front month", min_value=0.0,
-                          value=config.DEFAULT_JKM, step=config.INPUT_STEP, format="%.2f")
+    # key= gives the box a fixed name, so Streamlit remembers what you typed
+    jkm = sb.number_input("JKM front month", min_value=0.0, key="jkm_input",
+                          value=jkm_prefill, step=config.INPUT_STEP, format="%.2f",
+                          help="Starts at Yahoo's latest JKM daily settlement. "
+                               "Type over it if you have a fresher price.")
 
     sb.subheader("Freight (Sabine Pass →)")
     freight_nwe = sb.number_input("North-West Europe", min_value=0.0,
@@ -166,6 +174,25 @@ def jkm_changed_at(jkm):
     return st.session_state["jkm_changed_at"]
 
 
+def jkm_used_quote(jkm, settlement):
+    """The JKM ticket for the price the calculation actually uses.
+
+    If the sidebar still shows Yahoo's settlement, it carries the settlement's
+    source, date and light. If the trader typed their own number, it becomes
+    a "User input" ticket timed from when they changed it.
+    """
+    if settlement.value is not None and jkm == settlement.value:
+        return market_data.Quote(
+            name="JKM used",
+            value=settlement.value,
+            unit=settlement.unit,
+            source=settlement.source,
+            timestamp=settlement.timestamp,
+            status=settlement.status,
+        )
+    return market_data.manual_quote("JKM used", jkm, "USD/MMBtu", jkm_changed_at(jkm))
+
+
 def format_age(timestamp):
     """Turn a timestamp into a short age like '4 min', '3 h' or '2 d'."""
     if timestamp is None:
@@ -190,14 +217,21 @@ def show_price_panel(quotes):
 
     rows = []
     for quote, decimals in quotes:
+        # Daily settlements have a date but no meaningful time of day
+        if quote.timestamp is None:
+            when = "n/a"
+        elif quote.source == config.SOURCE_YFINANCE_DAILY:
+            when = quote.timestamp.strftime("%a %d %b (daily)")
+        else:
+            when = quote.timestamp.strftime("%a %d %b %H:%M UTC")
+
         rows.append({
             "Status": STATUS_LIGHTS[quote.status],   # first, because it's what a trader checks first
             "Price": quote.name,
             "Value": f"{quote.value:.{decimals}f}" if quote.value is not None else "n/a",
             "Unit": quote.unit,
             "Source": quote.source,
-            "Last traded / changed": (quote.timestamp.strftime("%a %d %b %H:%M UTC")
-                                      if quote.timestamp else "n/a"),
+            "Last traded / changed": when,
             "Age": format_age(quote.timestamp),
         })
 
@@ -379,14 +413,15 @@ def dashboard(inputs):
                f"next auto refresh around "
                f"{datetime.fromtimestamp(next_refresh, timezone.utc).strftime('%H:%M UTC')}")
 
-    # The manual JKM ticket (needed in both branches below)
-    jkm_quote = market_data.manual_quote(
-        "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
-    )
+    # Two JKM tickets: what Yahoo settled at, and what the maths actually uses
+    jkm_settlement = prices["jkm_settlement"]
+    jkm_used = jkm_used_quote(inputs["jkm"], jkm_settlement)
 
-    # If any live price is missing, we can't calculate. Show which feeds are
+    # If HH, TTF or EURUSD is missing, we can't calculate. Show which feeds are
     # down (red lights), say so clearly, and stop here.
-    missing = [quote.name for quote in prices.values() if quote.value is None]
+    # (A missing JKM settlement is fine: the JKM box falls back to the default.)
+    live_prices = [prices["henry_hub"], prices["ttf"], prices["eurusd"]]
+    missing = [quote.name for quote in live_prices if quote.value is None]
     if missing:
         st.error(f"No price available for: {', '.join(missing)}. "
                  "Check your internet connection, then click 'Refresh prices now'.")
@@ -394,7 +429,8 @@ def dashboard(inputs):
             (prices["henry_hub"], 3),
             (prices["ttf"], 2),
             (prices["eurusd"], 4),
-            (jkm_quote, 2),
+            (jkm_settlement, 3),
+            (jkm_used, 3),
         ])
         show_log()
         return   # leave the function: nothing more to draw
@@ -419,7 +455,8 @@ def dashboard(inputs):
         (prices["ttf"], 2),
         (ttf_usd_quote, 3),
         (prices["eurusd"], 4),
-        (jkm_quote, 2),
+        (jkm_settlement, 3),
+        (jkm_used, 3),
     ])
 
     show_netbacks(result, inputs)
@@ -432,5 +469,12 @@ def dashboard(inputs):
 st.title("🚢 LNG Arbitrage: Sabine Pass cargo, Europe or Asia?")
 st.caption("Front-month prices. yfinance data is delayed and indicative only.")
 
-inputs = sidebar_inputs()
+# Load prices once here so the JKM box can start at Yahoo's settlement.
+# (They're cached, so the dashboard below reuses them; no second download.)
+starting_prices, _ = load_market_prices()   # "_" = a value we don't need here
+jkm_settlement_value = starting_prices["jkm_settlement"].value
+if jkm_settlement_value is None:
+    jkm_settlement_value = config.DEFAULT_JKM   # Yahoo had nothing: use the fallback
+
+inputs = sidebar_inputs(jkm_settlement_value)
 dashboard(inputs)

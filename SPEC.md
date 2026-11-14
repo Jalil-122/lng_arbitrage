@@ -14,7 +14,7 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 
 | Version | Scope |
 |---|---|
-| **V1** (this spec) | Calculator with live delayed prices (HH, TTF, EURUSD), user inputs (JKM, freight, fees), auto refresh, a status light for each price, and a refresh log |
+| **V1** (this spec) | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, user inputs (freight, fees), auto refresh, a status light for each price, and a refresh log |
 | V2 | Route map (Sabine to NWE, Sabine to Asia via Panama and via Cape), sensitivity charts, freight built up from charter rate × voyage days, boil-off, M+1 delivery-month pricing |
 | V3 | Historical arb analysis from the refresh log (and a scheduled logger if continuous history is needed) |
 
@@ -36,6 +36,7 @@ Anything listed under V2 or V3 is **out of scope for V1**.
 | Log storage | CSV file `data/arb_log.csv`, one row per refresh |
 | Deployment | Local in V1. The code avoids anything that would block a later move to Streamlit Community Cloud. |
 | Python environment | `venv` + `requirements.txt` (Python 3.14 detected on the machine) |
+| JKM source | Yahoo `JKM=F` gives only a **daily settlement** (CME JKM futures, settled on Platts), not live trades. It **prefills** the sidebar JKM box; the trader can type over it. If Yahoo has nothing, the box falls back to the $30.00 default. A truly live JKM needs a paid feed (Platts/ICE/CME), which would change only `market_data.py`. |
 
 ## 4. Data sources (V1)
 
@@ -46,7 +47,7 @@ All prices are in **USD/MMBtu** unless stated otherwise.
 | Henry Hub (front month) | yfinance (delayed) | `NG=F` | USD/MMBtu |
 | TTF (front month) | yfinance (delayed) | `TTF=F` | EUR/MWh |
 | EURUSD | yfinance (delayed) | `EURUSD=X` | USD per EUR |
-| JKM (front month) | User input | sidebar | USD/MMBtu |
+| JKM (front month) | yfinance daily settlement, used as an editable sidebar prefill | `JKM=F` | USD/MMBtu |
 | Freight, Sabine to NWE | User input | sidebar | USD/MMBtu |
 | Freight, Sabine to North Asia via Panama | User input | sidebar | USD/MMBtu |
 | Freight, Sabine to North Asia via Cape | User input | sidebar | USD/MMBtu |
@@ -56,7 +57,9 @@ All prices are in **USD/MMBtu** unless stated otherwise.
 
 Every price carries a **source label** and a **timestamp**:
 - yfinance prices: source `"yfinance (delayed)"`, timestamp = time of the last traded bar returned (not the time we fetched it).
+- JKM settlement: source `"yfinance (daily settlement)"`, timestamp = the settlement date. It is always more than an hour old, so it always shows 🔴. That is honest: it is yesterday's price.
 - User inputs: source `"User input"`, timestamp = when the value was last changed in the sidebar.
+- The price panel shows two JKM rows: **JKM settlement** (what Yahoo says) and **JKM used** (what the calculation uses: the settlement, or the trader's own number).
 
 ## 5. Data module design (the swappable layer)
 
@@ -126,7 +129,7 @@ Defaults are **placeholders** chosen to be roughly realistic. You can edit all o
 
 | Input | Default | Min | Step |
 |---|---|---|---|
-| JKM front month | 30.00 | 0 | 0.05 |
+| JKM front month | Yahoo daily settlement (fallback 30.00) | 0 | 0.05 |
 | Liquefaction fee | 2.50 | 0 | 0.05 |
 | Freight, NWE | 0.90 | 0 | 0.05 |
 | Freight, Asia via Panama | 1.60 | 0 | 0.05 |

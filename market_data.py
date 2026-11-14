@@ -74,16 +74,19 @@ def quote_status(timestamp, now=None):
 _last_good_quotes = {}
 
 
-def fetch_yfinance_quote(name, ticker, unit):
-    """Fetch the latest traded price for one ticker and return it as a Quote.
+def fetch_yfinance_quote(name, ticker, unit, period="5d", interval="1m",
+                         source=config.SOURCE_YFINANCE):
+    """Fetch the latest price for one ticker and return it as a Quote.
 
-    Asks Yahoo for 1-minute bars over the last 5 days and keeps the last one.
-    (5 days, so we still get Friday's close on a weekend.)
+    By default asks Yahoo for 1-minute bars over the last 5 days and keeps
+    the last one (5 days, so we still get Friday's close on a weekend).
+    For once-a-day prices like JKM, call it with interval="1d" (daily bars).
+
     Never crashes: if anything goes wrong, returns the last good price
     marked "stale", or an empty Quote if we never had one.
     """
     try:
-        bars = yf.Ticker(ticker).history(period="5d", interval="1m")
+        bars = yf.Ticker(ticker).history(period=period, interval=interval)
 
         if bars.empty:
             raise ValueError(f"no data returned for {ticker}")
@@ -96,7 +99,7 @@ def fetch_yfinance_quote(name, ticker, unit):
             name=name,
             value=last_price,
             unit=unit,
-            source=config.SOURCE_YFINANCE,
+            source=source,
             timestamp=last_time,
             status=quote_status(last_time),
         )
@@ -120,20 +123,25 @@ def fetch_yfinance_quote(name, ticker, unit):
             )
 
         return Quote(name=name, value=None, unit=unit,
-                     source=config.SOURCE_YFINANCE, timestamp=None, status="stale")
+                     source=source, timestamp=None, status="stale")
 
 
 def get_market_prices():
-    """Fetch every live market price the app needs.
+    """Fetch every market price the app needs.
 
     Returns a dictionary of Quotes:
-        {"henry_hub": Quote, "ttf": Quote, "eurusd": Quote}
+        {"henry_hub": Quote, "ttf": Quote, "eurusd": Quote, "jkm_settlement": Quote}
     This is the one function the rest of the app calls.
     """
     return {
         "henry_hub": fetch_yfinance_quote("Henry Hub", config.TICKER_HENRY_HUB, "USD/MMBtu"),
         "ttf": fetch_yfinance_quote("TTF", config.TICKER_TTF, "EUR/MWh"),
         "eurusd": fetch_yfinance_quote("EURUSD", config.TICKER_EURUSD, "USD per EUR"),
+        # JKM: Yahoo only has daily settlements, so we ask for daily bars over a month
+        "jkm_settlement": fetch_yfinance_quote(
+            "JKM settlement", config.TICKER_JKM, "USD/MMBtu",
+            period="1mo", interval="1d", source=config.SOURCE_YFINANCE_DAILY,
+        ),
     }
 
 

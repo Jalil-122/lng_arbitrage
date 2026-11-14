@@ -7,6 +7,8 @@ so the result is always the same.
 
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
+
 import market_data
 
 NOW = datetime(2026, 11, 13, 15, 0, tzinfo=timezone.utc)   # a fixed "current time"
@@ -86,6 +88,31 @@ def test_failed_fetch_keeps_last_good_price_marked_stale(monkeypatch):
 
     assert quote.value == 3.23          # the old price is kept...
     assert quote.status == "stale"      # ...but clearly flagged red
+    market_data._last_good_quotes.clear()
+
+
+class DailyJkmTicker:
+    """A fake yfinance Ticker that returns two daily JKM settlements."""
+    def __init__(self, ticker):
+        pass
+
+    def history(self, **kwargs):
+        dates = pd.to_datetime(["2026-11-12", "2026-11-13"]).tz_localize("America/New_York")
+        return pd.DataFrame({"Close": [31.365, 31.351]}, index=dates)
+
+
+def test_daily_jkm_settlement_takes_last_day(monkeypatch):
+    monkeypatch.setattr(market_data.yf, "Ticker", DailyJkmTicker)
+
+    quote = market_data.fetch_yfinance_quote(
+        "JKM settlement", "JKM=F", "USD/MMBtu",
+        period="1mo", interval="1d", source="yfinance (daily settlement)",
+    )
+
+    assert quote.value == 31.351                         # the latest settlement
+    assert quote.source == "yfinance (daily settlement)"
+    assert quote.timestamp.date().isoformat() == "2026-11-13"
+    assert quote.status == "stale"                       # a day-old price is always red
     market_data._last_good_quotes.clear()
 
 
