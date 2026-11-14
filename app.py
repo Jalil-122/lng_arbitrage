@@ -6,6 +6,7 @@ This file only DISPLAYS things. It:
   2. reads the trader's inputs from the sidebar
   3. runs the formulas in arb_calc.py
   4. shows the answer
+  5. logs each price refresh to data/arb_log.csv (via arb_log.py)
 
 Run it with:   streamlit run app.py
 
@@ -19,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 import arb_calc
+import arb_log
 import config
 import market_data
 
@@ -34,12 +36,18 @@ st.set_page_config(page_title="LNG Arb: Sabine Pass", page_icon="🚢", layout="
 # 1. Live prices
 # ---------------------------------------------------------------------------
 
-# @st.cache_data keeps the result in memory for REFRESH_SECONDS.
+# @st.cache_data keeps the result in memory for a while (ttl = "time to live").
 # Without it, every click in the sidebar would re-download prices from Yahoo.
-@st.cache_data(ttl=config.REFRESH_SECONDS)
+# It expires 10 seconds BEFORE the 5-minute auto refresh, so each timer tick
+# is sure to find the old prices expired and fetch new ones.
+@st.cache_data(ttl=config.REFRESH_SECONDS - 10)
 def load_market_prices():
-    """Fetch HH, TTF and EURUSD (cached for 5 minutes)."""
-    return market_data.get_market_prices()
+    """Fetch HH, TTF and EURUSD (cached for 5 minutes).
+
+    Returns two things: (the prices, the time we fetched them).
+    The fetch time lets us log exactly one row per real refresh.
+    """
+    return market_data.get_market_prices(), datetime.now(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -311,47 +319,107 @@ def show_margins(result):
 
 
 # ---------------------------------------------------------------------------
-# Main page: runs top to bottom
+# 7. Refresh log
 # ---------------------------------------------------------------------------
+
+def log_if_new_prices(fetched_at, prices, inputs, result):
+    """Write one row to the log, but only once per price fetch.
+
+    Streamlit re-runs the page on every click. We remember (in session_state)
+    the fetch time we last logged, so changing an input doesn't add a row;
+    only new prices do (app start, every 5 minutes, or 'Refresh prices now').
+    """
+    if st.session_state.get("last_logged_fetch") != fetched_at:
+        row = arb_log.build_log_row(fetched_at, prices, inputs, result)
+        arb_log.append_row(row)
+        st.session_state["last_logged_fetch"] = fetched_at
+
+
+# The few columns shown on screen (the download has all of them)
+LOG_COLUMNS_SHOWN = ["refresh_time_utc", "hh", "ttf_usd", "jkm", "netback_eu",
+                     "netback_asia", "asia_route", "spread", "verdict", "margin_variable"]
+
+
+def show_log():
+    """Show the most recent refreshes, newest first, and a download button."""
+    st.subheader("Refresh log")
+    log = arb_log.read_log()
+
+    st.caption(f"{len(log)} refreshes recorded in {config.LOG_FILE_PATH}. "
+               f"Showing the last {config.LOG_ROWS_SHOWN}, newest first. "
+               "History only builds while the app is open.")
+
+    recent = log.tail(config.LOG_ROWS_SHOWN).iloc[::-1]   # last N rows, reversed (newest on top)
+    st.dataframe(recent[LOG_COLUMNS_SHOWN], hide_index=True, width="stretch")
+
+    st.download_button(
+        "⬇️ Download full log (CSV)",
+        data=log.to_csv(index=False),
+        file_name="arb_log.csv",
+        mime="text/csv",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main page
+# ---------------------------------------------------------------------------
+
+# @st.fragment(run_every=...) makes Streamlit re-run this function on a timer
+# (every 5 minutes), so prices refresh without anyone clicking.
+# The sidebar stays outside: a fragment is not allowed to draw in the sidebar.
+@st.fragment(run_every=config.REFRESH_SECONDS)
+def dashboard(inputs):
+    """Fetch prices, calculate, display everything, and log the refresh."""
+    prices, fetched_at = load_market_prices()
+
+    next_refresh = fetched_at.timestamp() + config.REFRESH_SECONDS
+    st.caption(f"Prices fetched {fetched_at.strftime('%H:%M:%S UTC')} · "
+               f"next auto refresh around "
+               f"{datetime.fromtimestamp(next_refresh, timezone.utc).strftime('%H:%M UTC')}")
+
+    # If any live price is missing, we can't calculate. Say so clearly and stop here.
+    missing = [quote.name for quote in prices.values() if quote.value is None]
+    if missing:
+        st.error(f"No price available for: {', '.join(missing)}. "
+                 "Check your internet connection, then click 'Refresh prices now'.")
+        show_log()
+        return   # leave the function: nothing more to draw
+
+    result = arb_calc.calculate_arb(
+        henry_hub=prices["henry_hub"].value,
+        ttf_eur_mwh=prices["ttf"].value,
+        eurusd=prices["eurusd"].value,
+        **inputs,   # ** passes every sidebar input by name
+    )
+
+    show_verdict(result, inputs["threshold"])
+
+    # Wrap the converted TTF and the manual JKM as Quotes too,
+    # so every price on screen carries a source, timestamp and light.
+    ttf_usd_quote = market_data.derived_quote(
+        "TTF", result["ttf_usd"], "USD/MMBtu", [prices["ttf"], prices["eurusd"]]
+    )
+    jkm_quote = market_data.manual_quote(
+        "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
+    )
+
+    show_price_panel([
+        (prices["henry_hub"], 3),
+        (prices["ttf"], 2),
+        (ttf_usd_quote, 3),
+        (prices["eurusd"], 4),
+        (jkm_quote, 2),
+    ])
+
+    show_netbacks(result, inputs)
+    show_margins(result)
+
+    log_if_new_prices(fetched_at, prices, inputs, result)
+    show_log()
+
 
 st.title("🚢 LNG Arbitrage: Sabine Pass cargo, Europe or Asia?")
 st.caption("Front-month prices. yfinance data is delayed and indicative only.")
 
 inputs = sidebar_inputs()
-prices = load_market_prices()
-
-# If any live price is missing, we can't calculate. Say so clearly and stop.
-missing = [quote.name for quote in prices.values() if quote.value is None]
-if missing:
-    st.error(f"No price available for: {', '.join(missing)}. "
-             "Check your internet connection, then click 'Refresh prices now'.")
-    st.stop()   # stop drawing the rest of the page
-
-result = arb_calc.calculate_arb(
-    henry_hub=prices["henry_hub"].value,
-    ttf_eur_mwh=prices["ttf"].value,
-    eurusd=prices["eurusd"].value,
-    **inputs,   # ** passes every sidebar input by name
-)
-
-show_verdict(result, inputs["threshold"])
-
-# Wrap the converted TTF and the manual JKM as Quotes too,
-# so every price on screen carries a source, timestamp and light.
-ttf_usd_quote = market_data.derived_quote(
-    "TTF", result["ttf_usd"], "USD/MMBtu", [prices["ttf"], prices["eurusd"]]
-)
-jkm_quote = market_data.manual_quote(
-    "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
-)
-
-show_price_panel([
-    (prices["henry_hub"], 3),
-    (prices["ttf"], 2),
-    (ttf_usd_quote, 3),
-    (prices["eurusd"], 4),
-    (jkm_quote, 2),
-])
-
-show_netbacks(result, inputs)
-show_margins(result)
+dashboard(inputs)
