@@ -199,3 +199,79 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
         yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
     )
     return figure
+
+
+# ---------------------------------------------------------------------------
+# Decision heatmap (V2): which way the cargo goes, for every JKM x Asia freight
+# ---------------------------------------------------------------------------
+
+# One colour per outcome (same order as arb_calc.OUTCOMES)
+OUTCOME_COLOURS = {
+    "Europe": "#3D7DD8",        # blue
+    "Asia": "#E8A33D",          # amber-orange
+    "Indifferent": "#3A4250",   # slate
+    "Cancel": "#F6465D",        # red
+}
+OUTCOME_ORDER = ["Europe", "Asia", "Indifferent", "Cancel"]
+
+
+def heatmap_freight_range(current_freight, points=config.HEATMAP_POINTS):
+    """Asia freight levels to try: from half today's level to double (at least +$2)."""
+    low = current_freight * 0.5
+    high = max(current_freight * 2, current_freight + 2)
+    return [low + (high - low) * i / (points - 1) for i in range(points)]
+
+
+def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
+                     current_jkm, current_freight, route_name):
+    """Grid of coloured cells: the outcome for each JKM (x) and Asia freight (y).
+
+    A heatmap needs numbers, so each outcome becomes a code (Europe=0, Asia=1,
+    Indifferent=2, Cancel=3) and the colour scale maps each code to its colour.
+    """
+    codes = [[OUTCOME_ORDER.index(cell) for cell in row] for row in outcomes]
+
+    # A "stepped" colour scale: each code gets one flat colour (no gradients)
+    steps = []
+    for code, name in enumerate(OUTCOME_ORDER):
+        start, end = code / len(OUTCOME_ORDER), (code + 1) / len(OUTCOME_ORDER)
+        steps += [[start, OUTCOME_COLOURS[name]], [end, OUTCOME_COLOURS[name]]]
+
+    # What appears when hovering a cell: its outcome and spread
+    hover_text = [[f"{outcomes[r][c]} · spread {spreads[r][c]:+.2f}"
+                   for c in range(len(jkm_values))] for r in range(len(freight_values))]
+
+    figure = go.Figure(go.Heatmap(
+        x=jkm_values, y=freight_values, z=codes,
+        zmin=-0.5, zmax=len(OUTCOME_ORDER) - 0.5,   # centres each code in its colour step
+        colorscale=steps, showscale=False,
+        text=hover_text,
+        hovertemplate="JKM %{x:.2f} · Asia freight %{y:.2f}<br>%{text}<extra></extra>",
+    ))
+
+    # Today's evaluation: a white cross
+    figure.add_trace(go.Scatter(
+        x=[current_jkm], y=[current_freight], mode="markers+text",
+        marker={"symbol": "x", "size": 14, "color": "white", "line": {"width": 1, "color": "#0B0E13"}},
+        text=["Now"], textposition="top right",
+        textfont={"color": "white", "family": MONO, "size": 12},
+        hoverinfo="skip", showlegend=False,
+    ))
+
+    # Legend: one invisible point per outcome, just to show the colour keys
+    for name in OUTCOME_ORDER:
+        figure.add_trace(go.Scatter(
+            x=[None], y=[None], mode="markers", name=name,
+            marker={"size": 12, "symbol": "square", "color": OUTCOME_COLOURS[name]},
+        ))
+
+    figure.update_layout(
+        height=420,
+        margin={"l": 10, "r": 10, "t": 10, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": TEXT, "family": MONO, "size": 11},
+        legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
+        xaxis={"title": "JKM ($/MMBtu)", "showgrid": False},
+        yaxis={"title": f"Asia freight via {route_name} ($/MMBtu)", "showgrid": False},
+    )
+    return figure

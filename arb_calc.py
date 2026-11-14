@@ -294,3 +294,48 @@ def spread_curve(inputs, price_name, low, high, points=config.SENSITIVITY_POINTS
         prices.append(price)
         spreads.append(calculate_arb(**changed)["spread"])
     return prices, spreads
+
+
+# ---------------------------------------------------------------------------
+# Decision heatmap (V2): the outcome for every JKM x Asia freight combination
+# ---------------------------------------------------------------------------
+
+OUTCOMES = ["Europe", "Asia", "Indifferent", "Cancel"]   # the four possible answers
+
+
+def outcome(result):
+    """Sum up a result in one word: "Europe", "Asia", "Indifferent" or "Cancel"."""
+    if result["decision"] == "CANCEL":
+        return "Cancel"
+    return result["winner"]
+
+
+def decision_grid(inputs, jkm_values, freight_values):
+    """Re-run the arb for every (JKM, Asia freight) pair.
+
+    freight_values replace the freight of the Asia route chosen in `inputs`
+    (Panama or Cape); the other route keeps its own freight, so the app may
+    switch routes if that one becomes cheaper.
+
+    Returns two grids (lists of rows, one row per freight value):
+      outcomes: the one-word outcome of each cell
+      spreads:  the spread (Asia - Europe) of each cell
+    """
+    chosen_route = calculate_arb(**inputs)["asia_route"]          # "Panama" or "Cape"
+    freight_key = "freight_panama" if chosen_route == "Panama" else "freight_cape"
+
+    outcomes = []
+    spreads = []
+    for freight in freight_values:          # one row per freight level
+        outcome_row = []
+        spread_row = []
+        for jkm in jkm_values:              # one cell per JKM level
+            changed = dict(inputs)
+            changed["jkm"] = jkm
+            changed[freight_key] = freight
+            result = calculate_arb(**changed)
+            outcome_row.append(outcome(result))
+            spread_row.append(result["spread"])
+        outcomes.append(outcome_row)
+        spreads.append(spread_row)
+    return outcomes, spreads

@@ -681,6 +681,23 @@ def show_sensitivity(evaluation):
     ttf_box.caption(f"Europe wins above TTF **€{breakeven_ttf:.2f}/MWh** "
                     f"(today {inputs['ttf_eur_mwh'] - breakeven_ttf:+.2f} from breakeven).")
 
+    # Decision heatmap: JKM x Asia freight (of the route chosen in this evaluation)
+    section_header("Decision map · JKM × Asia freight")
+    route = result["asia_route"]
+    current_freight = inputs["freight_panama"] if route == "Panama" else inputs["freight_cape"]
+    jkm_low, jkm_high = charts.chart_range(inputs["jkm"], breakeven_jkm)
+    jkm_values = [jkm_low + (jkm_high - jkm_low) * i / (config.HEATMAP_POINTS - 1)
+                  for i in range(config.HEATMAP_POINTS)]
+    freight_values = charts.heatmap_freight_range(current_freight)
+    outcomes, spreads = arb_calc.decision_grid(inputs, jkm_values, freight_values)
+    st.plotly_chart(
+        charts.decision_heatmap(jkm_values, freight_values, outcomes, spreads,
+                                inputs["jkm"], current_freight, route),
+        width="stretch", config={"displayModeBar": False})
+    st.caption(f"Each cell re-runs the full calculation with that JKM and that freight via "
+               f"{route} (everything else as in this evaluation). If {route} gets too expensive, "
+               "the cargo may switch to the other Asia route. Hover a cell for its spread.")
+
 
 # ---------------------------------------------------------------------------
 # 8. Live market panel

@@ -240,3 +240,36 @@ def test_spread_curve_rises_with_jkm():
     assert prices == [10.0, 11.0, 12.0, 13.0, 14.0]
     assert spreads == sorted(spreads)                              # higher JKM -> Asia better
     assert spreads[2] == pytest.approx(0.116295, abs=1e-6)         # JKM 12 = the base case
+
+
+# ---------------------------------------------------------------------------
+# V2: decision heatmap (SPEC.md 12.4, done criterion 7)
+# ---------------------------------------------------------------------------
+
+def test_outcome_labels():
+    assert arb_calc.outcome(arb_calc.calculate_arb(**BASE_INPUTS)) == "Asia"
+    assert arb_calc.outcome(arb_calc.calculate_arb(**dict(BASE_INPUTS, threshold=0.20))) == "Indifferent"
+    assert arb_calc.outcome(arb_calc.calculate_arb(**dict(BASE_INPUTS, panama_available=False))) == "Europe"
+    assert arb_calc.outcome(arb_calc.calculate_arb(**dict(BASE_INPUTS, henry_hub=10.0))) == "Cancel"
+
+
+def test_decision_grid_cells_by_hand():
+    # Rows = Asia freight (Panama, the chosen route), columns = JKM
+    outcomes, spreads = arb_calc.decision_grid(BASE_INPUTS, [11.0, 12.0], [1.60, 3.00])
+
+    # JKM 12, freight 1.60: Panama 10.05 vs Europe 9.933705 -> +0.116295 -> Asia
+    assert outcomes[0][1] == "Asia"
+    assert spreads[0][1] == pytest.approx(0.116295, abs=1e-6)
+    # JKM 11, freight 1.60: Panama 9.05 -> -0.883705 -> Europe
+    assert outcomes[0][0] == "Europe"
+    assert spreads[0][0] == pytest.approx(-0.883705, abs=1e-6)
+    # JKM 12, Panama freight 3.00: Panama 8.65 is now worse than Cape 9.55,
+    # so the cargo switches to the Cape: 9.55 - 9.933705 = -0.383705 -> Europe
+    assert outcomes[1][1] == "Europe"
+    assert spreads[1][1] == pytest.approx(-0.383705, abs=1e-6)
+
+
+def test_decision_grid_shows_cancel():
+    # HH at 10: FOB variable 11.50 is above every netback in the grid -> Cancel everywhere
+    outcomes, _ = arb_calc.decision_grid(dict(BASE_INPUTS, henry_hub=10.0), [11.0, 12.0], [1.6])
+    assert outcomes == [["Cancel", "Cancel"]]
