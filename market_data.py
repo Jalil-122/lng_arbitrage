@@ -138,6 +138,59 @@ def get_market_prices():
 
 
 # ---------------------------------------------------------------------------
+# Prices that don't come from yfinance
+# ---------------------------------------------------------------------------
+
+def manual_quote(name, value, unit, changed_at):
+    """Wrap a price the trader typed in (e.g. JKM) as a Quote.
+
+    changed_at: when the trader last changed the value.
+    The status light uses the same age rule as market prices, so a manual
+    price nobody has updated for over an hour turns red as a reminder.
+    (If a desk gets a real JKM feed, e.g. Platts, it replaces this function.)
+    """
+    return Quote(
+        name=name,
+        value=value,
+        unit=unit,
+        source=config.SOURCE_USER,
+        timestamp=changed_at,
+        status=quote_status(changed_at),
+    )
+
+
+# Order of the lights from best to worst, used to pick the worse of two
+STATUS_ORDER = ["fresh", "delayed", "stale"]
+
+
+def derived_quote(name, value, unit, ingredients):
+    """Build a Quote for a price calculated from other Quotes.
+
+    Example: TTF in USD/MMBtu is made from TTF (EUR/MWh) and EURUSD.
+    A calculated price is only as good as its worst ingredient, so it takes:
+      - the OLDEST timestamp of the ingredients
+      - the WORST status light of the ingredients
+    """
+    timestamps = [q.timestamp for q in ingredients if q.timestamp is not None]
+    oldest = min(timestamps) if timestamps else None
+
+    worst_status = "fresh"
+    for q in ingredients:
+        if STATUS_ORDER.index(q.status) > STATUS_ORDER.index(worst_status):
+            worst_status = q.status
+
+    sources = sorted(set(q.source for q in ingredients))   # set() removes duplicates
+    return Quote(
+        name=name,
+        value=value,
+        unit=unit,
+        source=", ".join(sources) + " (converted)",
+        timestamp=oldest,
+        status=worst_status,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Run this file directly to see live prices in the terminal
 # ---------------------------------------------------------------------------
 

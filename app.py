@@ -13,6 +13,9 @@ How Streamlit works: every time you change an input, Streamlit re-runs
 this whole file from top to bottom and redraws the page.
 """
 
+from datetime import datetime, timezone
+
+import pandas as pd
 import streamlit as st
 
 import arb_calc
@@ -139,6 +142,64 @@ def show_verdict(result, threshold):
 
 
 # ---------------------------------------------------------------------------
+# 4. Price panel
+# ---------------------------------------------------------------------------
+
+def jkm_changed_at(jkm):
+    """Return the time the JKM input was last changed.
+
+    st.session_state is the app's short-term memory: unlike normal
+    variables, it survives each re-run of this file. We store the last
+    JKM value seen, and the time it changed.
+    """
+    if st.session_state.get("last_jkm") != jkm:
+        st.session_state["last_jkm"] = jkm
+        st.session_state["jkm_changed_at"] = datetime.now(timezone.utc)
+    return st.session_state["jkm_changed_at"]
+
+
+def format_age(timestamp):
+    """Turn a timestamp into a short age like '4 min', '3 h' or '2 d'."""
+    if timestamp is None:
+        return "n/a"
+    minutes = (datetime.now(timezone.utc) - timestamp).total_seconds() / 60
+    if minutes < 60:
+        return f"{minutes:.0f} min"
+    if minutes < 24 * 60:
+        return f"{minutes / 60:.0f} h"
+    return f"{minutes / (24 * 60):.0f} d"
+
+
+STATUS_LIGHTS = {"fresh": "🟢 fresh", "delayed": "🟡 delayed", "stale": "🔴 stale"}
+
+
+def show_price_panel(quotes):
+    """Show one row per price: value, unit, source, timestamp, age, status light.
+
+    quotes: a list of (Quote, number of decimals to show) pairs.
+    """
+    st.subheader("Prices")
+
+    rows = []
+    for quote, decimals in quotes:
+        rows.append({
+            "Status": STATUS_LIGHTS[quote.status],   # first, because it's what a trader checks first
+            "Price": quote.name,
+            "Value": f"{quote.value:.{decimals}f}" if quote.value is not None else "n/a",
+            "Unit": quote.unit,
+            "Source": quote.source,
+            "Last traded / changed": (quote.timestamp.strftime("%a %d %b %H:%M UTC")
+                                      if quote.timestamp else "n/a"),
+            "Age": format_age(quote.timestamp),
+        })
+
+    # A pandas DataFrame is a table; st.dataframe draws it on the page
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.caption("Status: 🟢 under 20 min old · 🟡 20 to 60 min · 🔴 over 60 min or fetch failed. "
+               "Markets closed (e.g. weekends) show 🔴.")
+
+
+# ---------------------------------------------------------------------------
 # Main page: runs top to bottom
 # ---------------------------------------------------------------------------
 
@@ -163,3 +224,20 @@ result = arb_calc.calculate_arb(
 )
 
 show_verdict(result, inputs["threshold"])
+
+# Wrap the converted TTF and the manual JKM as Quotes too,
+# so every price on screen carries a source, timestamp and light.
+ttf_usd_quote = market_data.derived_quote(
+    "TTF", result["ttf_usd"], "USD/MMBtu", [prices["ttf"], prices["eurusd"]]
+)
+jkm_quote = market_data.manual_quote(
+    "JKM", inputs["jkm"], "USD/MMBtu", jkm_changed_at(inputs["jkm"])
+)
+
+show_price_panel([
+    (prices["henry_hub"], 3),
+    (prices["ttf"], 2),
+    (ttf_usd_quote, 3),
+    (prices["eurusd"], 4),
+    (jkm_quote, 2),
+])
