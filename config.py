@@ -56,6 +56,23 @@ INPUT_STEP = 0.05                  # how much each +/- click changes a sidebar i
 
 
 # ---------------------------------------------------------------------------
+# 3b. Detailed freight model (V2): defaults, all editable in the pop-up
+# ---------------------------------------------------------------------------
+# Freight = charter rate x ROUND-TRIP days (+ canal tolls) / cargo size.
+# Boil-off = share of the cargo that evaporates on the LADEN (loaded) leg.
+
+DEFAULT_CARGO_MMBTU = 3_500_000      # MMBtu loaded (a standard ~174,000 m3 carrier)
+DEFAULT_CHARTER_RATE = 80_000        # USD per day for the ship
+DEFAULT_BOIL_OFF_PCT_PER_DAY = 0.10  # % of the cargo lost per laden day
+
+DEFAULT_DAYS_NWE = 14                # one-way days, Sabine Pass -> North-West Europe
+DEFAULT_DAYS_PANAMA = 25             # one-way days, Sabine Pass -> North Asia via Panama
+DEFAULT_DAYS_CAPE = 40               # one-way days, Sabine Pass -> North Asia via Cape
+
+DEFAULT_PANAMA_TOLL = 500_000        # USD per Panama Canal transit (paid going AND coming back)
+
+
+# ---------------------------------------------------------------------------
 # 4. Decision threshold
 # ---------------------------------------------------------------------------
 

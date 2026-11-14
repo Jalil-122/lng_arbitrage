@@ -42,13 +42,70 @@ def fob_full_cost(henry_hub, liquefaction_fee):
     return fob_variable_cost(henry_hub) + liquefaction_fee
 
 
-def netback(hub_price, freight, regas):
-    """Netback = what the cargo is worth back at Sabine Pass.
+def netback(hub_price, freight, regas, boil_off=0.0):
+    """Netback = what the cargo is worth back at Sabine Pass, per MMBtu LOADED.
 
-    Take the price at the destination hub, then subtract the cost
-    of getting it there (freight) and turning it back into gas (regas).
+    Take the price at the destination hub, minus regas (turning it back into gas),
+    on the gas that actually ARRIVES (1 - boil_off), then minus freight.
+
+    boil_off: share of the cargo lost on the way (e.g. 0.014 = 1.4%).
+    With boil_off = 0 (the default) this is simply hub - regas - freight (V1).
     """
-    return hub_price - freight - regas
+    return (hub_price - regas) * (1 - boil_off) - freight
+
+
+# ---------------------------------------------------------------------------
+# Detailed freight model (V2): freight and boil-off from voyage inputs
+# ---------------------------------------------------------------------------
+
+def voyage_freight(charter_rate, one_way_days, cargo_mmbtu,
+                   canal_toll_per_transit=0.0, canal_transits=0):
+    """Freight in USD per MMBtu loaded, for a ROUND-TRIP voyage.
+
+    The charterer pays the ship for the trip out (laden) AND back (ballast),
+    plus any canal tolls, and spreads that bill over the MMBtu loaded.
+    """
+    round_trip_days = 2 * one_way_days
+    charter_cost = charter_rate * round_trip_days                  # USD
+    canal_cost = canal_toll_per_transit * canal_transits           # USD
+    return (charter_cost + canal_cost) / cargo_mmbtu
+
+
+def boil_off_fraction(boil_off_pct_per_day, laden_days):
+    """Share of the cargo that evaporates on the laden leg.
+
+    Example: 0.10% per day x 14 days = 1.4%, returned as 0.014.
+    """
+    return boil_off_pct_per_day / 100 * laden_days
+
+
+def detailed_freight(charter_rate, cargo_mmbtu, boil_off_pct_per_day,
+                     days_nwe, days_panama, days_cape, panama_toll):
+    """Run the voyage model for the three routes.
+
+    Returns a dictionary per route ("nwe", "panama", "cape") with the
+    build-up: round-trip days, charter cost, canal cost, freight ($/MMBtu)
+    and boil-off (fraction). The Panama route pays the toll twice
+    (going laden, coming back in ballast).
+    """
+    routes = {
+        "nwe": {"one_way_days": days_nwe, "canal_transits": 0},
+        "panama": {"one_way_days": days_panama, "canal_transits": 2},
+        "cape": {"one_way_days": days_cape, "canal_transits": 0},
+    }
+
+    build_up = {}
+    for route, voyage in routes.items():   # .items() gives each (name, details) pair
+        days = voyage["one_way_days"]
+        transits = voyage["canal_transits"]
+        build_up[route] = {
+            "round_trip_days": 2 * days,
+            "charter_cost": charter_rate * 2 * days,
+            "canal_cost": panama_toll * transits,
+            "freight": voyage_freight(charter_rate, days, cargo_mmbtu, panama_toll, transits),
+            "boil_off": boil_off_fraction(boil_off_pct_per_day, days),
+        }
+    return build_up
 
 
 def choose_asia_route(netback_panama, netback_cape, panama_available):
@@ -115,11 +172,17 @@ def calculate_arb(
     liquefaction_fee,
     panama_available=config.DEFAULT_PANAMA_AVAILABLE,
     threshold=config.DEFAULT_INDIFFERENCE_THRESHOLD,
+    boil_off_nwe=0.0,
+    boil_off_panama=0.0,
+    boil_off_cape=0.0,
 ):
     """Run the whole arb calculation and return every result in a dictionary.
 
     A dictionary is a set of labelled values, e.g. result["netback_europe"].
     The app displays these values, and the log saves them.
+
+    boil_off_*: share of the cargo lost per route (Detailed freight mode).
+    Left at 0 (Simple mode), the results are exactly the V1 ones.
     """
     # 1. Put TTF in the same unit as everything else (USD/MMBtu)
     ttf_usd = ttf_to_usd_mmbtu(ttf_eur_mwh, eurusd)
@@ -128,10 +191,10 @@ def calculate_arb(
     fob_variable = fob_variable_cost(henry_hub)
     fob_full = fob_full_cost(henry_hub, liquefaction_fee)
 
-    # 3. Netbacks: Europe, and Asia by both routes
-    netback_europe = netback(ttf_usd, freight_nwe, regas_europe)
-    netback_asia_panama = netback(jkm, freight_panama, regas_asia)
-    netback_asia_cape = netback(jkm, freight_cape, regas_asia)
+    # 3. Netbacks: Europe, and Asia by both routes (boil-off is 0 in Simple mode)
+    netback_europe = netback(ttf_usd, freight_nwe, regas_europe, boil_off_nwe)
+    netback_asia_panama = netback(jkm, freight_panama, regas_asia, boil_off_panama)
+    netback_asia_cape = netback(jkm, freight_cape, regas_asia, boil_off_cape)
 
     # 4. Best Asia route
     netback_asia, asia_route = choose_asia_route(
