@@ -14,11 +14,11 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 
 | Version | Scope |
 |---|---|
-| **V1** (this spec) | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, user inputs (freight, fees), auto refresh, a status light for each price, and a refresh log |
-| V2 | Route map (Sabine to NWE, Sabine to Asia via Panama and via Cape), sensitivity charts, freight built up from charter rate × voyage days, boil-off, M+1 delivery-month pricing |
-| V3 | Historical arb analysis from the refresh log (and a scheduled logger if continuous history is needed) |
+| **V1** ✅ done | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, "Evaluate a cargo" pop-up, auto refresh, a status light for each price, and a refresh log |
+| **V2** (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
+| V3 | Historical arb analysis from the refresh log (and a scheduled logger if continuous history is needed). M+1 delivery-month pricing. |
 
-Anything listed under V2 or V3 is **out of scope for V1**.
+Sections 1–11 describe V1. Section 12 describes V2 and overrides V1 where they differ.
 
 ## 3. V1 decisions (agreed)
 
@@ -224,3 +224,113 @@ lng_arbitrage/
 6. The app refreshes itself every 5 minutes, and each refresh adds one row to `data/arb_log.csv`.
 7. If there is no internet, the app still opens, shows stale lights, and does not crash.
 8. No file other than `market_data.py` imports yfinance.
+
+---
+
+## 12. V2 specification
+
+### 12.1 V2 decisions (agreed)
+
+| Topic | Decision |
+|---|---|
+| Scope | Freight & boil-off model, design overhaul, route map, sensitivity charts |
+| Build order | 1. Freight & boil-off model → 2. Design → 3. Route map → 4. Charts |
+| Freight input | **Two modes with a switch** in the pop-up: **Simple** (type $/MMBtu per route, as in V1, no boil-off) and **Detailed** (built from the charter model below) |
+| Voyage cost basis | **Round trip** (laden + ballast): the charterer pays for the ship to come back |
+| Boil-off | Applied on the **laden leg only**, in Detailed mode. Ballast boil-off (heel) is ignored |
+| Design | **Dark trading terminal**: dark background, compact numbers, green/red accents |
+| Charts | **Breakeven lines** and **decision heatmap**. (Tornado chart not in V2.) |
+| New library | **Plotly** (interactive charts and map), added to `requirements.txt` |
+| Not in V2 | M+1 delivery-month pricing (moved to V3), Suez route, fuel/bunker costs beyond boil-off |
+
+### 12.2 Detailed freight model: inputs and defaults (all editable)
+
+| Input | Default | Unit |
+|---|---|---|
+| Cargo size (loaded) | 3,500,000 | MMBtu |
+| Charter rate | 80,000 | USD/day |
+| Boil-off rate | 0.10 | % of cargo per laden day |
+| One-way days, Sabine Pass → NWE | 14 | days |
+| One-way days, Sabine Pass → North Asia via Panama | 25 | days |
+| One-way days, Sabine Pass → North Asia via Cape | 40 | days |
+| Panama Canal toll | 500,000 | USD per transit |
+
+### 12.3 Formulas (Detailed mode)
+
+All per **loaded** MMBtu.
+
+```
+round_trip_days   = 2 × one_way_days
+charter_cost      = charter_rate × round_trip_days                      (USD)
+canal_cost        = panama_toll × 2   (Panama route only: laden + ballast transits)
+freight           = (charter_cost + canal_cost) ÷ cargo_size            (USD/MMBtu)
+
+boil_off_fraction = boil_off_rate_per_day × one_way_days                (laden leg only)
+
+netback           = (hub_price − regas) × (1 − boil_off_fraction) − freight
+```
+
+Why: boil-off means fewer MMBtu arrive than were loaded, so the cargo sells less gas
+(and pays regas on less gas) while the freight bill is the same.
+
+In **Simple** mode, `boil_off_fraction = 0`, so the netback formula is exactly V1's.
+
+Worked example with the defaults:
+
+| Route | Round trip | Charter | Toll | Freight | Boil-off |
+|---|---|---|---|---|---|
+| NWE | 28 d | $2.24m | – | $0.640 | 1.4% |
+| Asia via Panama | 50 d | $4.00m | $1.00m | $1.429 | 2.5% |
+| Asia via Cape | 80 d | $6.40m | – | $1.829 | 4.0% |
+
+The Panama vs Cape choice, the verdict and lift/cancel are unchanged (section 6),
+using these netbacks.
+
+### 12.4 Screens (changes from V1)
+
+**Pop-up "Evaluate a cargo"**
+- Section 2 "Freight" gets a **Simple / Detailed** switch.
+- Detailed shows: cargo size, charter rate, boil-off rate, one-way days per route, Panama toll.
+- After Evaluate, a small **freight build-up table** shows per route: round-trip days, charter cost, toll, freight $/MMBtu, boil-off %.
+
+**Sidebar summary**: shows the freight mode, and in Detailed mode the voyage inputs and the resulting freight and boil-off per route.
+
+**Netback tables**: add a "Boil-off loss" line when boil-off is above zero.
+
+**Design (dark trading terminal)**
+- Streamlit dark theme set in `.streamlit/config.toml`, with a terminal accent colour.
+- Compact, aligned numbers; green = favourable, red = unfavourable; consistent spacing and section headers.
+- The page reads top to bottom: verdict → route map → netbacks → margins → sensitivity → live market → log.
+
+**Route map**
+- World map (Plotly) with three routes from Sabine Pass: to NWE (Gate terminal, Rotterdam), to Tokyo Bay via the Panama Canal, and to Tokyo Bay via the Cape of Good Hope (passing Singapore/Malacca).
+- Each route is labelled with its netback. The **winning route is highlighted** (thicker, accent colour); the others are dimmed. A closed Panama is drawn dashed and grey.
+
+**Sensitivity charts** (computed from the current evaluation)
+- **Breakeven lines**: the Asia − Europe spread as JKM moves (other inputs fixed), with the **breakeven JKM** (spread = 0) and the ± threshold band marked. The same chart for TTF.
+- **Decision heatmap**: JKM on one axis, Asia freight (best route, $/MMBtu) on the other; each cell coloured by the outcome: Europe / Asia / Indifferent / Cancel. The current evaluation is marked on the grid.
+
+**Log**: unchanged columns. In Detailed mode, the logged freight is the calculated $/MMBtu, and the logged netbacks include boil-off.
+
+### 12.5 File changes (V2)
+
+```
+arb_calc.py      + voyage freight and boil-off functions; netback gains an optional boil-off
+config.py        + voyage defaults, map coordinates, chart ranges
+app.py           + freight mode switch, freight table, map, charts, new layout
+charts.py        NEW: builds the Plotly map and charts (display only, no formulas)
+.streamlit/config.toml   NEW: dark theme
+requirements.txt + plotly
+tests/           + tests for the freight/boil-off maths and the breakeven calculation
+```
+
+### 12.6 Done criteria for V2
+
+1. In Detailed mode, freight and boil-off match the worked example in 12.3 (covered by tests).
+2. In Simple mode, every V1 result is unchanged (all V1 tests still pass).
+3. The pop-up switches between Simple and Detailed, and the freight build-up table shows after Evaluate.
+4. The app uses the dark terminal theme, and the page follows the order in 12.4.
+5. The route map shows the three routes, labelled with netbacks, the winner highlighted, and Panama dashed when closed.
+6. The breakeven chart marks the breakeven JKM, which matches a hand calculation (covered by a test).
+7. The heatmap colours each cell by outcome and marks the current evaluation.
+8. Everything still works offline (typed prices) and `market_data.py` is still the only file importing yfinance.

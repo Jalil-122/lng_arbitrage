@@ -5,7 +5,8 @@
 - **Owner:** a former gas trader (TTF, biomethane), now on the LBS Master in Financial Analysis and **learning Python**. They know the market well; Python is new to them.
 - **Goal:** a CV project. A Streamlit dashboard that answers "should a US LNG cargo from Sabine Pass go to Europe or Asia right now, and by how much?"
 - **Full scope and formulas:** see [SPEC.md](SPEC.md). SPEC.md is the source of truth. If code and spec disagree, ask before changing either.
-- **Versions:** V1 is a calculator with live data and inputs. V2 adds a route map and sensitivity charts. V3 adds historical arb analysis. Build only V1 until it meets the "done" criteria in SPEC.md section 11.
+- **Versions:** V1 (calculator, live data, "Evaluate a cargo" pop-up) is **done**. **V2 is in progress**: freight & boil-off model, dark terminal design, route map, sensitivity charts. Its spec is SPEC.md section 12. V3 (historical analysis, M+1 pricing) comes after V2 meets its done criteria (SPEC.md 12.6).
+- **GitHub:** https://github.com/Jalil-122/lng_arbitrage. After committing, `git push` uploads (the owner's token is saved in the macOS Keychain; never handle tokens).
 
 ## Architecture rules (desk-tool design)
 
@@ -28,7 +29,17 @@
 4. Don't add libraries, files or features that aren't in SPEC.md without asking first.
 5. When you teach a new Python or Streamlit idea for the first time, add a one- or two-line explanation.
 
-## Suggested V1 build order
+## V2 build order
+
+1. Freight & boil-off model: `arb_calc.py` functions + tests (worked example in SPEC 12.3), Simple mode unchanged.
+2. Pop-up: Simple / Detailed freight switch, freight build-up table, sidebar summary update.
+3. Design: dark terminal theme (`.streamlit/config.toml`) and page layout order (SPEC 12.4).
+4. Add Plotly; `charts.py` with the route map; place it under the verdict.
+5. Breakeven lines (JKM and TTF), with a breakeven test.
+6. Decision heatmap.
+7. Check every item in SPEC.md 12.6, refresh the README screenshots.
+
+## V1 build order (done)
 
 1. Set up `venv`, `requirements.txt` (streamlit, yfinance, pandas, pytest) and `.gitignore` (venv, `__pycache__`, `data/arb_log.csv`).
 2. `config.py`: defaults and thresholds from SPEC.md.
