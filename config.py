@@ -36,7 +36,8 @@ HH_MULTIPLIER = 1.15     # US LNG contracts pay 115% of Henry Hub for the feed g
 # 3. Default sidebar inputs (placeholders, all editable in the app)
 # ---------------------------------------------------------------------------
 
-DEFAULT_JKM = 11.50                # JKM front month (no free live source, so you enter it)
+DEFAULT_JKM = 30.00                # JKM front month (no free live source, so you enter it).
+                                   # Set near TTF in USD (~29.40 in Nov 2026) plus a small Asia premium.
 DEFAULT_LIQUEFACTION_FEE = 2.50    # Sabine Pass tolling fee (sunk for the offtaker)
 
 DEFAULT_FREIGHT_NWE = 0.90         # Sabine Pass -> North-West Europe

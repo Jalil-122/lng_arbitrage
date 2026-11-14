@@ -126,7 +126,7 @@ Defaults are **placeholders** chosen to be roughly realistic. You can edit all o
 
 | Input | Default | Min | Step |
 |---|---|---|---|
-| JKM front month | 11.50 | 0 | 0.05 |
+| JKM front month | 30.00 | 0 | 0.05 |
 | Liquefaction fee | 2.50 | 0 | 0.05 |
 | Freight, NWE | 0.90 | 0 | 0.05 |
 | Freight, Asia via Panama | 1.60 | 0 | 0.05 |
