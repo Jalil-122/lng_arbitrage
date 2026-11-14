@@ -100,3 +100,38 @@ DELAYED_MAX_MINUTES = 60
 
 LOG_FILE_PATH = "data/arb_log.csv"   # one row added here at every refresh
 LOG_ROWS_SHOWN = 20                  # how many recent rows the dashboard displays
+
+
+# ---------------------------------------------------------------------------
+# 7. Route map (V2): coordinates as (latitude, longitude)
+# ---------------------------------------------------------------------------
+# Each route is a list of points the line passes through, so it follows a
+# realistic sea lane instead of cutting across land.
+
+PORT_SABINE_PASS = (29.73, -93.87)   # Cheniere's export terminal, Louisiana
+PORT_GATE = (51.95, 4.05)            # Gate LNG terminal, Rotterdam (North-West Europe)
+PORT_TOKYO_BAY = (35.20, 139.90)     # Tokyo Bay (North Asia, JKM)
+
+ROUTE_POINTS = {
+    "nwe": [
+        PORT_SABINE_PASS, (25.5, -88.0), (24.3, -82.0), (27.0, -79.5),   # Gulf, Florida Strait
+        (36.0, -60.0), (46.0, -25.0), (49.5, -6.0), (50.8, 1.0),         # Atlantic, English Channel
+        PORT_GATE,
+    ],
+    "panama": [
+        PORT_SABINE_PASS, (25.0, -89.0), (21.6, -85.9), (12.0, -80.5),   # Gulf, Yucatan Channel
+        (9.35, -79.92), (8.85, -79.50),                                   # Panama Canal
+        (6.0, -85.0), (15.0, -120.0), (25.0, -160.0), (32.0, 170.0),     # Pacific
+        PORT_TOKYO_BAY,
+    ],
+    "cape": [
+        PORT_SABINE_PASS, (25.5, -88.0), (24.3, -82.0), (27.0, -79.5),   # Gulf, Florida Strait
+        (10.0, -40.0), (-10.0, -20.0), (-30.0, 0.0), (-35.0, 18.5),      # Atlantic, Cape of Good Hope
+        (-30.0, 50.0), (-10.0, 85.0), (5.5, 95.0), (1.25, 103.8),        # Indian Ocean, Malacca
+        (10.0, 110.0), (22.0, 118.0), (30.0, 128.0),                     # South China Sea
+        PORT_TOKYO_BAY,
+    ],
+}
+
+# Where each route's netback label is written on the map
+ROUTE_LABEL_POINTS = {"nwe": (43.0, -42.0), "panama": (14.0, -118.0), "cape": (-27.0, 42.0)}

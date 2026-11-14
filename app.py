@@ -21,6 +21,7 @@ import streamlit as st
 
 import arb_calc
 import arb_log
+import charts
 import config
 import market_data
 
@@ -817,6 +818,12 @@ else:
         st.caption(f"YOUR EVALUATION · {evaluation['time'].strftime('%H:%M UTC')} "
                    "· details in the sidebar")
     show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
+
+    section_header("Routes from Sabine Pass")
+    # config={"displayModeBar": False} hides Plotly's toolbar, for a cleaner look
+    st.plotly_chart(charts.route_map(evaluation["result"], evaluation["inputs"]),
+                    width="stretch", config={"displayModeBar": False})
+
     show_netbacks(evaluation["result"], evaluation["inputs"])
     show_margins(evaluation["result"])
 
