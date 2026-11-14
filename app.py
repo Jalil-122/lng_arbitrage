@@ -33,6 +33,63 @@ st.set_page_config(page_title="LNG Arb: Sabine Pass", page_icon="🚢", layout="
 
 
 # ---------------------------------------------------------------------------
+# Look: dark trading terminal
+# ---------------------------------------------------------------------------
+# The colours come from .streamlit/config.toml. This small block of CSS (the
+# language web pages use for styling) adds what the theme can't do on its own.
+
+ACCENT = "#FFB000"       # amber (same as primaryColor in config.toml)
+MUTED_TEXT = "#8B95A3"   # grey for labels
+MONO = '"SF Mono", Menlo, Consolas, "Liberation Mono", monospace'
+
+TERMINAL_CSS = f"""
+<style>
+/* Use more of the screen, less empty space at the top */
+.block-container {{ padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1400px; }}
+
+/* Big numbers (metrics) in an aligned monospace font, like a trading screen */
+[data-testid="stMetricValue"], [data-testid="stMetricDelta"] {{
+    font-family: {MONO}; font-variant-numeric: tabular-nums;
+}}
+[data-testid="stMetricLabel"] p {{
+    text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; color: {MUTED_TEXT};
+}}
+
+/* Section titles: small amber uppercase labels with a thin line underneath */
+.section-label {{
+    text-transform: uppercase; letter-spacing: .12em; font-size: .78rem; font-weight: 700;
+    color: {ACCENT}; border-bottom: 1px solid #2A323D;
+    padding-bottom: .35rem; margin: 1.4rem 0 .7rem 0;
+}}
+
+/* Header bar */
+.app-kicker {{ color: {ACCENT}; font-family: {MONO}; font-size: .8rem; letter-spacing: .15em; }}
+.app-title  {{ font-size: 1.9rem; font-weight: 700; margin: .1rem 0 .2rem 0; }}
+.app-sub    {{ color: {MUTED_TEXT}; font-size: .85rem; }}
+
+/* Verdict banner */
+.verdict {{
+    padding: 16px 22px; border-radius: 4px; border-left: 6px solid;
+    font-family: {MONO}; font-size: 1.45rem; font-weight: 700; letter-spacing: .02em;
+}}
+</style>
+"""
+
+
+def apply_terminal_style():
+    """Inject the CSS above into the page."""
+    st.markdown(TERMINAL_CSS, unsafe_allow_html=True)
+
+
+def section_header(title, where=st):
+    """A small amber uppercase section title (where = st, st.sidebar, a column...)."""
+    where.markdown(f'<div class="section-label">{title}</div>', unsafe_allow_html=True)
+
+
+apply_terminal_style()
+
+
+# ---------------------------------------------------------------------------
 # 1. Live prices
 # ---------------------------------------------------------------------------
 
@@ -188,7 +245,12 @@ def indicative_evaluation(prices):
 # 3. Verdict
 # ---------------------------------------------------------------------------
 
-BANNER_COLOURS = {"lift": "#1e7b34", "cancel": "#b3261e", "indifferent": "#5f6368"}  # green, red, grey
+# Each verdict: (dark tinted background, bright border/text colour)
+BANNER_COLOURS = {
+    "lift": ("#0F2A1F", "#2EBD85"),         # green
+    "cancel": ("#2E1217", "#F6465D"),       # red
+    "indifferent": ("#1B222C", "#9AA4B2"),  # slate grey
+}
 
 
 def dollars(value):
@@ -219,13 +281,15 @@ def verdict_sentence(result, threshold):
     return text, BANNER_COLOURS["lift"]
 
 
-def show_banner(text, colour):
-    """Draw a big coloured box with white text."""
+def show_banner(text, colours):
+    """Draw the verdict box: dark tinted background, bright coloured border and text.
+
+    colours: (background, accent) from BANNER_COLOURS.
+    """
+    background, accent = colours
     st.markdown(
-        f"""<div style="background:{colour}; color:white; padding:18px 24px;
-                        border-radius:8px; font-size:26px; font-weight:700;">
-                {text}
-            </div>""",
+        f'<div class="verdict" style="background:{background}; border-color:{accent}; '
+        f'color:{accent};">{text}</div>',
         unsafe_allow_html=True,   # allows our small bit of HTML styling
     )
 
@@ -268,7 +332,7 @@ def evaluate_dialog(prices):
 
     # Every change in the pop-up re-runs only the pop-up (it's cheap: nothing is
     # calculated until Evaluate). That lets the freight switch show the right boxes at once.
-    st.markdown("**1. Gas prices**")
+    section_header("1 · Gas prices")
     c1, c2, c3, c4 = st.columns(4)
     henry_hub = c1.number_input("Henry Hub", min_value=0.0, step=0.05, format="%.3f",
                                 value=market["henry_hub"] or 0.0)
@@ -279,7 +343,7 @@ def evaluate_dialog(prices):
     jkm = c4.number_input("JKM", min_value=0.0, step=0.05, format="%.3f",
                           value=market["jkm"])
 
-    st.markdown("**2. Freight (Sabine Pass →)**")
+    section_header("2 · Freight (Sabine Pass →)")
     freight_mode = st.radio("Freight mode", [FREIGHT_SIMPLE, FREIGHT_DETAILED], horizontal=True,
                             index=[FREIGHT_SIMPLE, FREIGHT_DETAILED].index(costs["freight_mode"]),
                             label_visibility="collapsed")
@@ -321,7 +385,7 @@ def evaluate_dialog(prices):
     new_costs["panama_available"] = not st.toggle("Panama Canal unavailable",
                                                   value=not costs["panama_available"])
 
-    st.markdown("**3. Fees**")
+    section_header("3 · Fees")
     c1, c2, c3 = st.columns(3)
     new_costs["regas_europe"] = c1.number_input(
         "Regas Europe", min_value=0.0, step=config.INPUT_STEP, format="%.2f",
@@ -372,7 +436,7 @@ def show_freight_build_up(build_up, panama_available):
             "Freight ($/MMBtu)": f"{voyage['freight']:.3f}",
             "Boil-off (%)": f"{voyage['boil_off'] * 100:.1f}",
         })
-    st.markdown("**Freight build-up**")
+    section_header("Freight build-up")
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
@@ -391,7 +455,7 @@ def markdown_table(rows):
 def show_sidebar_summary(evaluation):
     """Show what the trader did: when, at what prices, with what costs, and the answer."""
     sb = st.sidebar
-    sb.header("Your evaluation")
+    section_header("Your evaluation", sb)
 
     if evaluation is None:
         sb.info("No evaluation yet, and no market prices to show. "
@@ -411,7 +475,7 @@ def show_sidebar_summary(evaluation):
     text, _ = verdict_sentence(result, inputs["threshold"])
     sb.markdown(f"**{text}**")
 
-    sb.subheader("Prices used")
+    section_header("Prices used", sb)
     sb.markdown(markdown_table([
         ("Henry Hub", f"{inputs['henry_hub']:.3f} · {sources['henry_hub']}"),
         ("TTF (EUR/MWh)", f"{inputs['ttf_eur_mwh']:.2f} · {sources['ttf_eur_mwh']}"),
@@ -420,7 +484,7 @@ def show_sidebar_summary(evaluation):
         ("JKM", f"{inputs['jkm']:.3f} · {sources['jkm']}"),
     ]))
 
-    sb.subheader("Costs used")
+    section_header("Costs used", sb)
     costs = evaluation["costs"]
     panama_text = "open" if inputs["panama_available"] else "**closed**"
     detailed = costs["freight_mode"] == FREIGHT_DETAILED
@@ -448,7 +512,7 @@ def show_sidebar_summary(evaluation):
         ("Liquefaction fee", f"{inputs['liquefaction_fee']:.2f}"),
     ]))
 
-    sb.subheader("Results")
+    section_header("Results", sb)
     sb.markdown(markdown_table([
         ("Netback Europe", dollars(result["netback_europe"])),
         ("Netback Asia", f"{dollars(result['netback_asia'])} via {result['asia_route']}"),
@@ -486,7 +550,7 @@ def show_netbacks(result, inputs):
 
     Only displays numbers already calculated in arb_calc.py.
     """
-    st.subheader("Netbacks at Sabine Pass")
+    section_header("Netbacks at Sabine Pass")
     st.caption("Netback = what the cargo is worth back at Sabine Pass, per MMBtu loaded, in "
                "USD/MMBtu. The prices and costs used are listed in the sidebar.")
 
@@ -560,7 +624,7 @@ def show_netbacks(result, inputs):
 
 def show_margins(result):
     """Show the cost of the cargo at Sabine Pass and the margin of the best destination."""
-    st.subheader("FOB cost and margins")
+    section_header("FOB cost and margins")
 
     tile1, tile2, tile3, tile4 = st.columns(4)
 
@@ -651,7 +715,7 @@ LOG_COLUMNS_SHOWN = ["refresh_time_utc", "hh", "ttf_usd", "jkm", "netback_eu",
 
 def show_log():
     """Show the most recent refreshes, newest first, and a download button."""
-    st.subheader("Refresh log (market arb history)")
+    section_header("Refresh log · market arb history")
     log = arb_log.read_log()
 
     st.caption(f"{len(log)} refreshes recorded in {config.LOG_FILE_PATH}: live market prices "
@@ -677,7 +741,7 @@ def live_market():
     """Live market panel + refresh log. Logs the market arb at every new price fetch."""
     prices, fetched_at = load_market_prices()
 
-    st.subheader("Live market")
+    section_header("Live market")
     next_refresh = fetched_at.timestamp() + config.REFRESH_SECONDS
     st.caption(f"Last price check {fetched_at.strftime('%H:%M:%S UTC')} · "
                f"next auto refresh around "
@@ -713,13 +777,19 @@ def live_market():
 # Main page: runs top to bottom
 # ---------------------------------------------------------------------------
 
-st.title("🚢 LNG Arbitrage: Sabine Pass cargo, Europe or Asia?")
-st.caption("Front-month prices. yfinance data is delayed and indicative only.")
-
+# Header bar: title on the left, the two buttons on the right
+title_box, buttons_box = st.columns([3, 2], vertical_alignment="bottom")
+title_box.markdown(
+    '<div class="app-kicker">LNG ARB ▸ SABINE PASS FOB</div>'
+    '<div class="app-title">Europe or Asia?</div>'
+    '<div class="app-sub">Where should a US LNG cargo go right now, and by how much? '
+    'Front-month prices · yfinance data delayed, indicative only.</div>',
+    unsafe_allow_html=True,
+)
 # Buttons first (we only act on them once prices are loaded below)
-button1, button2, _ = st.columns([2, 2, 2])
-evaluate_clicked = button1.button("🚢 Evaluate a cargo", type="primary", width="stretch")
-refresh_clicked = button2.button("🔄 Refresh prices", width="stretch")
+button1, button2 = buttons_box.columns(2)
+evaluate_clicked = button1.button("Evaluate a cargo", type="primary", width="stretch")
+refresh_clicked = button2.button("↻ Refresh prices", width="stretch")
 
 if refresh_clicked:
     st.cache_data.clear()   # forget the cached prices, so they're fetched again
@@ -741,11 +811,11 @@ if evaluation is None:
     st.warning("Market prices are unavailable. Click **Evaluate a cargo** and type them in.")
 else:
     if evaluation["indicative"]:
-        st.caption("⚪ Indicative: live market prices with default costs. "
+        st.caption("INDICATIVE · live market prices with default costs. "
                    "Click **Evaluate a cargo** to enter your own.")
     else:
-        st.caption(f"Your evaluation of {evaluation['time'].strftime('%H:%M UTC')} "
-                   "(details in the sidebar).")
+        st.caption(f"YOUR EVALUATION · {evaluation['time'].strftime('%H:%M UTC')} "
+                   "· details in the sidebar")
     show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
     show_netbacks(evaluation["result"], evaluation["inputs"])
     show_margins(evaluation["result"])

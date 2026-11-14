@@ -1,0 +1,24 @@
+# Streamlit settings for this project (read automatically by "streamlit run").
+# [theme] = the colours and fonts of the whole app: a dark trading-terminal look.
+
+[theme]
+base = "dark"
+
+# Amber accent, the classic trading-terminal colour (buttons, highlights)
+primaryColor = "#FFB000"
+
+backgroundColor = "#0B0E13"            # page: near-black
+secondaryBackgroundColor = "#141A22"   # panels, inputs, sidebar
+textColor = "#D9DEE5"                  # light grey text (easier on the eyes than pure white)
+borderColor = "#2A323D"
+
+# Favourable / unfavourable colours used by Streamlit (e.g. metric arrows)
+greenColor = "#2EBD85"
+redColor = "#F6465D"
+
+codeFont = "monospace"
+baseFontSize = 14                      # slightly smaller = more on one screen
+baseRadius = "small"                   # sharper corners, more "terminal"
+
+dataframeHeaderBackgroundColor = "#1B222C"
+showSidebarBorder = true
