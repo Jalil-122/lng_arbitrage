@@ -351,3 +351,148 @@ def test_last_years_keeps_the_latest_months():
     last_year = arb_calc.last_years(long_table, 1)
     assert len(last_year) == 12
     assert last_year["month"].iloc[0] == pd.Timestamp("2021-07-01")   # the 12 most recent
+
+
+# ---------------------------------------------------------------------------
+# V4: any load port, routes and passages
+# ---------------------------------------------------------------------------
+
+import config
+
+ALL_OPEN = {"panama": True, "suez": True, "hormuz": True}
+SUEZ_AVOIDED = {"panama": True, "suez": False, "hormuz": True}
+ALL_CLOSED = {"panama": False, "suez": False, "hormuz": False}
+
+# Sabine Pass with the V3 base-case freights, plus a cheap Suez route
+SABINE_INPUTS = {
+    "port_key": "sabine_pass",
+    "henry_hub": 3.00,
+    "ttf_eur_mwh": 35.00,
+    "eurusd": 1.10,
+    "jkm": 12.00,
+    "route_freight": {"nwe": 0.90, "asia_panama": 1.60, "asia_suez": 1.00, "asia_cape": 2.10},
+    "regas_europe": 0.45,
+    "regas_asia": 0.35,
+    "liquefaction_fee": 2.50,
+    "passage_open": SUEZ_AVOIDED,
+    "threshold": 0.10,
+}
+
+
+def test_voyage_days():
+    # 3,840 nm at 16 knots: 16 x 24 = 384 nm a day, so 10 days
+    assert arb_calc.voyage_days(3840, 16) == pytest.approx(10.0)
+
+
+def test_default_route_days_sabine_pass():
+    # 4,979 / 384 = 12.97 -> 13 ; 9,306 / 384 = 24.23 -> 24 ; 14,624 / 384 = 38.08 -> 38 ; 15,825 / 384 = 41.21 -> 41
+    days = arb_calc.default_route_days("sabine_pass", 16)
+    assert days == {"nwe": 13, "asia_panama": 24, "asia_suez": 38, "asia_cape": 41}
+
+
+def test_canal_toll_per_transit():
+    assert arb_calc.canal_toll_per_transit(["panama"], 500_000, 450_000) == 500_000
+    assert arb_calc.canal_toll_per_transit(["hormuz", "suez"], 500_000, 450_000) == 450_000
+    assert arb_calc.canal_toll_per_transit([], 500_000, 450_000) == 0
+
+
+def test_route_is_open():
+    assert arb_calc.route_is_open(["suez"], SUEZ_AVOIDED) is False
+    assert arb_calc.route_is_open(["panama"], SUEZ_AVOIDED) is True
+    assert arb_calc.route_is_open([], ALL_CLOSED) is True                # Cape: always open
+    # Hormuz disrupted never closes a route (warning instead)
+    assert arb_calc.route_is_open(["hormuz"], ALL_CLOSED) is True
+
+
+def test_sabine_pass_suez_avoided_gives_v3_results():
+    port_result = arb_calc.calculate_port_arb(**SABINE_INPUTS)
+    v3_result = arb_calc.calculate_arb(**BASE_INPUTS)
+
+    for name in ["netback_europe", "netback_asia", "spread", "margin_variable", "margin_full"]:
+        assert port_result[name] == pytest.approx(v3_result[name])
+    assert port_result["winner"] == v3_result["winner"]
+    assert port_result["decision"] == v3_result["decision"] == "LIFT"
+    assert port_result["asia_route"] == "asia_panama"
+    assert port_result["europe_route"] == "nwe"
+
+
+def test_opening_suez_picks_the_cheaper_suez_route():
+    inputs = dict(SABINE_INPUTS, passage_open=ALL_OPEN)
+    result = arb_calc.calculate_port_arb(**inputs)
+    # Suez: 12.00 - 0.35 - 1.00 = 10.65, beats Panama's 10.05
+    assert result["asia_route"] == "asia_suez"
+    assert result["netback_asia"] == pytest.approx(10.65)
+
+
+def test_closing_panama_and_suez_falls_back_to_the_cape():
+    inputs = dict(SABINE_INPUTS, passage_open=ALL_CLOSED)
+    result = arb_calc.calculate_port_arb(**inputs)
+    # Cape: 12.00 - 0.35 - 2.10 = 9.55 ; Europe 9.9337 ; spread -0.3837 -> Europe
+    assert result["asia_route"] == "asia_cape"
+    assert result["netback_asia"] == pytest.approx(9.55)
+    assert result["spread"] == pytest.approx(-0.383705, abs=1e-6)
+    assert result["winner"] == "Europe"
+
+
+def test_non_us_port_gives_destination_only():
+    result = arb_calc.calculate_port_arb(
+        port_key="bonny", ttf_eur_mwh=35.00, eurusd=1.10, jkm=12.00,
+        route_freight={"nwe": 0.80, "asia_cape": 2.00},
+        regas_europe=0.45, regas_asia=0.35, passage_open=SUEZ_AVOIDED,
+    )
+    # Europe: 11.2837 - 0.45 - 0.80 = 10.0337 ; Asia: 12.00 - 0.35 - 2.00 = 9.65
+    assert result["netback_europe"] == pytest.approx(10.033705, abs=1e-6)
+    assert result["netback_asia"] == pytest.approx(9.65)
+    assert result["winner"] == "Europe"
+    # No Henry Hub contract: no cancel option, no FOB cost, no margin
+    assert result["decision"] is None
+    assert result["fob_variable"] is None
+    assert result["margin_variable"] is None
+    assert arb_calc.outcome(result) == "Europe"
+
+
+def test_hormuz_warning_only_for_ras_laffan_when_disrupted():
+    hormuz_disrupted = {"panama": True, "suez": False, "hormuz": False}
+    assert arb_calc.hormuz_warning("ras_laffan", hormuz_disrupted) is True
+    assert arb_calc.hormuz_warning("ras_laffan", ALL_OPEN) is False
+    assert arb_calc.hormuz_warning("sabine_pass", hormuz_disrupted) is False
+
+
+def test_ras_laffan_routes_with_suez_closed():
+    result = arb_calc.calculate_port_arb(
+        port_key="ras_laffan", ttf_eur_mwh=35.00, eurusd=1.10, jkm=12.00,
+        route_freight={"nwe_suez": 0.70, "nwe_cape": 1.20, "asia": 0.75},
+        regas_europe=0.45, regas_asia=0.35,
+        passage_open={"panama": True, "suez": False, "hormuz": False},
+    )
+    # Suez closed -> Europe via the Cape: 11.2837 - 0.45 - 1.20 = 9.6337 ; Asia: 12 - 0.35 - 0.75 = 10.90
+    assert result["europe_route"] == "nwe_cape"
+    assert result["netback_europe"] == pytest.approx(9.633705, abs=1e-6)
+    assert result["asia_route"] == "asia"
+    assert result["winner"] == "Asia"
+    assert result["hormuz_warning"] is True
+
+
+def test_port_detailed_freight_matches_v2_worked_example():
+    build_up = arb_calc.port_detailed_freight(
+        "sabine_pass", {"nwe": 14, "asia_panama": 25, "asia_suez": 38, "asia_cape": 40},
+        charter_rate=80_000, cargo_mmbtu=3_500_000, boil_off_pct_per_day=0.10,
+        panama_toll=500_000, suez_toll=450_000,
+    )
+    # V2 worked example (SPEC 12.3): NWE 0.640, Panama 1.429, Cape 1.829
+    assert build_up["nwe"]["freight"] == pytest.approx(0.64)
+    assert build_up["asia_panama"]["freight"] == pytest.approx(5_000_000 / 3_500_000)
+    assert build_up["asia_cape"]["freight"] == pytest.approx(6_400_000 / 3_500_000)
+    assert build_up["asia_panama"]["boil_off"] == pytest.approx(0.025)
+    # Suez: (80,000 x 76 days + 2 x 450,000) / 3,500,000 = 6,980,000 / 3,500,000 = 1.9943
+    assert build_up["asia_suez"]["canal_cost"] == 900_000
+    assert build_up["asia_suez"]["freight"] == pytest.approx(6_980_000 / 3_500_000)
+
+
+def test_every_port_reaches_both_destinations_with_all_passages_closed():
+    # Each port keeps at least one always-open route (Cape, Cape Horn or direct)
+    for port_key, port in config.LOAD_PORTS.items():
+        netbacks = {route_key: 1.0 for route_key in port["routes"]}
+        for destination in ["nwe", "asia"]:
+            best, route = arb_calc.best_open_route(port_key, destination, netbacks, ALL_CLOSED)
+            assert route is not None, f"{port_key} has no open route to {destination}"

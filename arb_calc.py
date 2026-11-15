@@ -439,3 +439,194 @@ def seasonality(table):
             "months": len(spreads),
         })
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Any load port (V4): routes, passages and the best open route
+# ---------------------------------------------------------------------------
+# A port's routes come from config.LOAD_PORTS. Each route has a destination
+# ("nwe" or "asia"), a distance in nautical miles and the passages it uses.
+# passage_open is a dictionary like {"panama": True, "suez": False, "hormuz": False}.
+
+def voyage_days(distance_nm, speed_knots):
+    """One-way sailing days: distance / (speed x 24 hours).
+
+    A knot is one nautical mile per hour, so a ship at 16 knots covers
+    16 x 24 = 384 nautical miles a day.
+    """
+    return distance_nm / (speed_knots * 24)
+
+
+def default_route_days(port_key, speed_knots=config.DEFAULT_SHIP_SPEED_KNOTS):
+    """Prefill for the day boxes: one-way days for each route of a port, rounded to whole days."""
+    routes = config.LOAD_PORTS[port_key]["routes"]
+    days = {}
+    for route_key, route in routes.items():
+        days[route_key] = round(voyage_days(route["distance_nm"], speed_knots))
+    return days
+
+
+def canal_toll_per_transit(passages, panama_toll, suez_toll):
+    """Total canal toll for ONE transit of a route (one way).
+
+    Only Panama and Suez charge a toll here; Hormuz, Malacca or the Cape don't.
+    """
+    toll = 0.0
+    if "panama" in passages:
+        toll += panama_toll
+    if "suez" in passages:
+        toll += suez_toll
+    return toll
+
+
+def route_is_open(passages, passage_open):
+    """True if a route can be used: none of its passages is closed.
+
+    Hormuz is the exception: a Qatari cargo has no way around it, so a
+    disrupted Hormuz does not remove routes; the app shows a warning instead.
+    """
+    for passage in passages:
+        if passage == "hormuz":
+            continue                                   # warning only, see hormuz_warning()
+        if not passage_open.get(passage, True):        # passages not in the dict are always open
+            return False
+    return True
+
+
+def hormuz_warning(port_key, passage_open):
+    """True if the port's cargo must cross Hormuz while Hormuz is disrupted."""
+    if passage_open.get("hormuz", True):
+        return False
+    for route in config.LOAD_PORTS[port_key]["routes"].values():
+        if "hormuz" in route["passages"]:
+            return True
+    return False
+
+
+def port_detailed_freight(port_key, route_days, charter_rate, cargo_mmbtu,
+                          boil_off_pct_per_day, panama_toll, suez_toll):
+    """The V2 voyage model for every route of one port.
+
+    route_days: one-way days per route, e.g. {"nwe": 13, "asia_cape": 41}.
+    Returns, per route: round-trip days, charter cost, canal cost (two transits:
+    laden out, ballast back), freight ($/MMBtu loaded) and boil-off (fraction).
+    """
+    routes = config.LOAD_PORTS[port_key]["routes"]
+    build_up = {}
+    for route_key, route in routes.items():
+        days = route_days[route_key]
+        toll = canal_toll_per_transit(route["passages"], panama_toll, suez_toll)
+        build_up[route_key] = {
+            "round_trip_days": 2 * days,
+            "charter_cost": charter_rate * 2 * days,
+            "canal_cost": toll * 2,
+            "freight": voyage_freight(charter_rate, days, cargo_mmbtu, toll, 2),
+            "boil_off": boil_off_fraction(boil_off_pct_per_day, days),
+        }
+    return build_up
+
+
+def best_open_route(port_key, destination, route_netbacks, passage_open):
+    """Among the OPEN routes to one destination, the one with the highest netback.
+
+    Returns two things: (best netback, route key). If every route to that
+    destination is closed, returns (None, None).
+    """
+    best_netback = None
+    best_route = None
+    for route_key, route in config.LOAD_PORTS[port_key]["routes"].items():
+        if route["destination"] != destination:
+            continue
+        if not route_is_open(route["passages"], passage_open):
+            continue
+        if best_netback is None or route_netbacks[route_key] > best_netback:
+            best_netback = route_netbacks[route_key]
+            best_route = route_key
+    return best_netback, best_route
+
+
+def calculate_port_arb(
+    port_key,
+    ttf_eur_mwh,
+    eurusd,
+    jkm,
+    route_freight,
+    regas_europe,
+    regas_asia,
+    passage_open,
+    henry_hub=None,
+    liquefaction_fee=None,
+    threshold=config.DEFAULT_INDIFFERENCE_THRESHOLD,
+    route_boil_off=None,
+):
+    """Run the arb for a cargo loading at any port (V4).
+
+    route_freight: freight ($/MMBtu) for each route of the port.
+    route_boil_off: boil-off share for each route (leave out in Simple mode = 0).
+    henry_hub, liquefaction_fee: only for US ports (lift/cancel). For non-US ports
+    the answer is the destination only: decision, FOB costs and margins are None.
+
+    Same formulas as calculate_arb; with Sabine Pass and Suez closed it gives
+    exactly the same numbers.
+    """
+    port = config.LOAD_PORTS[port_key]
+    if route_boil_off is None:
+        route_boil_off = {}
+
+    # 1. TTF in USD/MMBtu, and the hub price at each destination
+    ttf_usd = ttf_to_usd_mmbtu(ttf_eur_mwh, eurusd)
+    hub_price = {"nwe": ttf_usd, "asia": jkm}
+    regas = {"nwe": regas_europe, "asia": regas_asia}
+
+    # 2. Netback and boil-off loss for every route (open or not, for display)
+    route_netbacks = {}
+    route_boil_off_loss = {}
+    for route_key, route in port["routes"].items():
+        destination = route["destination"]
+        boil_off = route_boil_off.get(route_key, 0.0)
+        route_netbacks[route_key] = netback(
+            hub_price[destination], route_freight[route_key], regas[destination], boil_off
+        )
+        # value of the gas that evaporated, per MMBtu loaded
+        route_boil_off_loss[route_key] = (hub_price[destination] - regas[destination]) * boil_off
+
+    # 3. Best open route to each destination
+    netback_europe, europe_route = best_open_route(port_key, "nwe", route_netbacks, passage_open)
+    netback_asia, asia_route = best_open_route(port_key, "asia", route_netbacks, passage_open)
+
+    # 4. Europe vs Asia
+    winner, spread = destination_verdict(netback_europe, netback_asia, threshold)
+    best_netback = max(netback_europe, netback_asia)
+
+    # 5. Lift or cancel: US (Henry Hub-linked) cargoes only
+    fob_variable = None
+    fob_full = None
+    decision = None
+    margin_variable = None
+    margin_full = None
+    if port["us_hh_linked"]:
+        fob_variable = fob_variable_cost(henry_hub)
+        fob_full = fob_full_cost(henry_hub, liquefaction_fee)
+        decision = lift_or_cancel(best_netback, fob_variable)
+        margin_variable = best_netback - fob_variable
+        margin_full = best_netback - fob_full
+
+    return {
+        "port": port_key,
+        "ttf_usd": ttf_usd,
+        "route_netbacks": route_netbacks,
+        "route_boil_off_loss": route_boil_off_loss,
+        "netback_europe": netback_europe,
+        "europe_route": europe_route,
+        "netback_asia": netback_asia,
+        "asia_route": asia_route,
+        "spread": spread,
+        "winner": winner,
+        "best_netback": best_netback,
+        "decision": decision,
+        "fob_variable": fob_variable,
+        "fob_full": fob_full,
+        "margin_variable": margin_variable,
+        "margin_full": margin_full,
+        "hormuz_warning": hormuz_warning(port_key, passage_open),
+    }
