@@ -1,5 +1,8 @@
 # 🚢 LNG Arbitrage Dashboard: Europe or Asia?
 
+### ▶ Live app: **[lng-arbitrage.streamlit.app](https://lng-arbitrage.streamlit.app/)**
+*Opens in any browser, phone included. If it has been idle, click "Yes, get this app back up" and wait about a minute.*
+
 A Streamlit dashboard that answers one trading-desk question:
 
 > **An LNG cargo is loading at a major export terminal. Should it go to Europe or to Asia right now, and by how much does the winner win?**
@@ -195,7 +198,7 @@ lng_arbitrage/
 | **V2** | Freight & boil-off model, dark terminal design, route map, breakeven charts, decision heatmap | ✅ Done |
 | **V3** | Historical arb since 2014 (FRED + Yahoo): arb over time, win rates, seasonality; M+1 delivery pricing | ✅ Done |
 | **V4** | Nine real load ports, real sea distances, Panama / Suez / Cape / Hormuz passages, destination-only verdict for non-US cargoes; design refresh (parchment cards, price strip, plain-English verdict) | ✅ Done |
-| Next | Publish online on Streamlit Community Cloud | Planned |
+| **Live** | Published on Streamlit Community Cloud: https://lng-arbitrage.streamlit.app/ | ✅ Live |
 
 ---
 
