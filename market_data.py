@@ -146,6 +146,65 @@ def get_market_prices():
 
 
 # ---------------------------------------------------------------------------
+# Contract months (V3): the front month and M+1
+# ---------------------------------------------------------------------------
+
+def contract_month(today, months_ahead):
+    """The (year, month) of the contract `months_ahead` months after today.
+
+    Gas futures roll before the delivery month starts, so in November:
+        months_ahead=1 -> December = the FRONT month (the loading month M)
+        months_ahead=2 -> January  = M+1 (the delivery month in Europe)
+    """
+    # Count months from year 0 so that December + 1 rolls into next January.
+    # divmod(a, b) gives two answers at once: a // b and a % b.
+    month_count = today.year * 12 + (today.month - 1) + months_ahead
+    year, month_index = divmod(month_count, 12)
+    return year, month_index + 1
+
+
+def contract_ticker(prefix, year, month):
+    """Yahoo ticker of one contract month, e.g. ("TTF", 2027, 1) -> "TTFF27.NYM"."""
+    letter = config.MONTH_CODES[month - 1]   # January -> "F", December -> "Z"
+    two_digit_year = f"{year % 100:02d}"     # 2027 -> "27", 2030 -> "30"
+    return f"{prefix}{letter}{two_digit_year}{config.CONTRACT_SUFFIX}"
+
+
+def month_label(year, month):
+    """Trader-style month name, e.g. (2027, 1) -> "Jan-27"."""
+    return datetime(year, month, 1).strftime("%b-%y")
+
+
+def get_contract_prices(today=None):
+    """Fetch the two contract-month prices used for M+1 delivery pricing.
+
+    Returns a dictionary of Quotes:
+        {"henry_hub_front": Henry Hub for the loading month (e.g. Dec-26),
+         "ttf_m1":          TTF for the delivery month     (e.g. Jan-27)}
+    Like every fetch here, a failure gives a red (stale) Quote, never an error.
+    today: normally left empty; tests pass a fixed date.
+    """
+    if today is None:
+        today = datetime.now(timezone.utc)
+
+    front_year, front_month = contract_month(today, 1)
+    m1_year, m1_month = contract_month(today, 2)
+
+    return {
+        "henry_hub_front": fetch_yfinance_quote(
+            f"Henry Hub {month_label(front_year, front_month)}",
+            contract_ticker(config.CONTRACT_PREFIX_HENRY_HUB, front_year, front_month),
+            "USD/MMBtu",
+        ),
+        "ttf_m1": fetch_yfinance_quote(
+            f"TTF {month_label(m1_year, m1_month)}",
+            contract_ticker(config.CONTRACT_PREFIX_TTF, m1_year, m1_month),
+            "EUR/MWh",
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Prices that don't come from yfinance
 # ---------------------------------------------------------------------------
 
@@ -207,8 +266,9 @@ def derived_quote(name, value, unit, ingredients):
 if __name__ == "__main__":
     lights = {"fresh": "🟢", "delayed": "🟡", "stale": "🔴"}
 
-    for quote in get_market_prices().values():
+    all_quotes = list(get_market_prices().values()) + list(get_contract_prices().values())
+    for quote in all_quotes:
         when = quote.timestamp.strftime("%Y-%m-%d %H:%M UTC") if quote.timestamp else "no time"
         value = f"{quote.value:.4f}" if quote.value is not None else "no price"
-        print(f"{lights[quote.status]} {quote.name:<10} {value:>10} {quote.unit:<12} "
+        print(f"{lights[quote.status]} {quote.name:<16} {value:>10} {quote.unit:<12} "
               f"| {quote.source} | {when}")

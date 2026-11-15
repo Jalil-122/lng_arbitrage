@@ -116,6 +116,76 @@ def test_daily_jkm_settlement_takes_last_day(monkeypatch):
     market_data._last_good_quotes.clear()
 
 
+# ---------------------------------------------------------------------------
+# Contract months (V3, M+1 pricing)
+# ---------------------------------------------------------------------------
+
+def test_spec_example_14_november_2026():
+    # SPEC 13.7: on 14 Nov 2026, front = TTFZ26.NYM (Dec-26), M+1 = TTFF27.NYM (Jan-27)
+    today = datetime(2026, 11, 14)
+    front = market_data.contract_month(today, 1)
+    m1 = market_data.contract_month(today, 2)
+    assert front == (2026, 12)
+    assert m1 == (2027, 1)
+    assert market_data.contract_ticker("TTF", *front) == "TTFZ26.NYM"
+    assert market_data.contract_ticker("TTF", *m1) == "TTFF27.NYM"
+    assert market_data.contract_ticker("NG", *front) == "NGZ26.NYM"
+
+
+def test_december_rolls_into_next_year():
+    # In December, the front month is already January and M+1 is February
+    today = datetime(2026, 12, 3)
+    assert market_data.contract_month(today, 1) == (2027, 1)
+    assert market_data.contract_month(today, 2) == (2027, 2)
+
+
+def test_every_month_letter():
+    # January F ... December Z: the 12 standard futures letters, in order
+    letters = [market_data.contract_ticker("NG", 2027, month)[2] for month in range(1, 13)]
+    assert "".join(letters) == "FGHJKMNQUVXZ"
+
+
+def test_month_label():
+    assert market_data.month_label(2027, 1) == "Jan-27"
+    assert market_data.month_label(2026, 12) == "Dec-26"
+
+
+class RecordingTicker:
+    """A fake yfinance Ticker that remembers which tickers were asked for."""
+    asked = []
+
+    def __init__(self, ticker):
+        RecordingTicker.asked.append(ticker)
+
+    def history(self, **kwargs):
+        dates = pd.to_datetime(["2026-11-13 11:33"]).tz_localize("America/New_York")
+        return pd.DataFrame({"Close": [90.781]}, index=dates)
+
+
+def test_contract_prices_ask_for_the_right_contracts(monkeypatch):
+    monkeypatch.setattr(market_data.yf, "Ticker", RecordingTicker)
+    RecordingTicker.asked = []
+
+    quotes = market_data.get_contract_prices(today=datetime(2026, 11, 14))
+
+    assert RecordingTicker.asked == ["NGZ26.NYM", "TTFF27.NYM"]
+    assert quotes["henry_hub_front"].name == "Henry Hub Dec-26"
+    assert quotes["ttf_m1"].name == "TTF Jan-27"
+    assert quotes["ttf_m1"].unit == "EUR/MWh"
+    market_data._last_good_quotes.clear()
+
+
+def test_contract_prices_offline_are_red_not_errors(monkeypatch):
+    # SPEC 13.4: if the M+1 contract has no data, its quote is red (stale)
+    monkeypatch.setattr(market_data.yf, "Ticker", BrokenTicker)
+    market_data._last_good_quotes.clear()
+
+    quotes = market_data.get_contract_prices(today=datetime(2026, 11, 14))
+
+    assert quotes["ttf_m1"].value is None
+    assert quotes["ttf_m1"].status == "stale"
+
+
 def test_boundaries():
     # Exactly 20 min old is no longer fresh; exactly 60 min old is stale
     assert market_data.quote_status(NOW - timedelta(minutes=20), now=NOW) == "delayed"

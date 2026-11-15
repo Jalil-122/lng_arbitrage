@@ -22,6 +22,13 @@ TICKER_EURUSD = "EURUSD=X"    # Euro to US dollar exchange rate (USD per 1 EUR)
 TICKER_JKM = "JKM=F"          # CME JKM LNG futures (settled on Platts JKM), USD/MMBtu.
                               # Yahoo only has ONE price per day (the settlement), not live trades.
 
+# Contract months (V3, M+1 pricing). Yahoo names each delivery month like
+# "TTFF27.NYM": product "TTF" + month letter "F" (January) + year "27" + ".NYM".
+CONTRACT_PREFIX_HENRY_HUB = "NG"
+CONTRACT_PREFIX_TTF = "TTF"
+CONTRACT_SUFFIX = ".NYM"
+MONTH_CODES = "FGHJKMNQUVXZ"   # the standard futures letters, January (F) to December (Z)
+
 SOURCE_YFINANCE = "yfinance (delayed)"   # label shown next to every yfinance price
 SOURCE_YFINANCE_DAILY = "yfinance (daily settlement)"   # label for once-a-day prices (JKM)
 SOURCE_USER = "User input"               # label shown next to every sidebar input
