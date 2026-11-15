@@ -275,3 +275,46 @@ def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
         yaxis={"title": f"Asia freight via {route_name} ($/MMBtu)", "showgrid": False},
     )
     return figure
+
+
+# ---------------------------------------------------------------------------
+# History (V3): the arb month by month
+# ---------------------------------------------------------------------------
+
+def arb_over_time_chart(table, threshold):
+    """Bar chart: one bar per month, height = spread (Asia - Europe), colour = outcome.
+
+    table: the monthly table from arb_calc.historical_arb.
+    The shaded band around zero is the "Indifferent" zone (+/- threshold).
+    """
+    figure = go.Figure()
+    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor="#5B6676", opacity=0.18, line_width=0)
+    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+
+    # One bar trace per outcome, so each gets its colour and its legend entry
+    for name in OUTCOME_ORDER:
+        months = table[table["outcome"] == name]
+        if months.empty:
+            continue
+        figure.add_trace(go.Bar(
+            x=months["month"], y=months["spread"], name=name,
+            marker={"color": OUTCOME_COLOURS[name]},
+            # customdata: extra columns the hover text can use (%{customdata[0]} = 1st column)
+            customdata=months[["netback_europe", "netback_asia", "asia_route"]],
+            hovertemplate=("%{x|%b %Y} · " + name + "<br>Spread %{y:+.2f}"
+                           "<br>Netback Europe %{customdata[0]:.2f}"
+                           "<br>Netback Asia %{customdata[1]:.2f} (%{customdata[2]})"
+                           "<extra></extra>"),
+        ))
+
+    figure.update_layout(
+        height=380,
+        bargap=0.15,
+        margin={"l": 10, "r": 10, "t": 10, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": TEXT, "family": MONO, "size": 11},
+        legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
+        xaxis={"gridcolor": GRID, "zeroline": False},
+        yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
+    )
+    return figure

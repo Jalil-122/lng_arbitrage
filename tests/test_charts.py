@@ -42,3 +42,21 @@ def test_closed_panama_is_dashed():
     figure = charts.route_map(make_result("LIFT", "Europe", "Cape"), {"panama_available": False})
     dashes = [trace.line.dash for trace in figure.data if trace.mode == "lines"]
     assert "dash" in dashes
+
+
+def test_arb_over_time_has_one_coloured_bar_set_per_outcome():
+    import pandas as pd
+    table = pd.DataFrame({
+        "month": pd.to_datetime(["2025-01-01", "2025-02-01", "2025-03-01"]),
+        "spread": [1.40, -0.60, 0.80],
+        "outcome": ["Asia", "Europe", "Asia"],
+        "netback_europe": [8.65, 10.65, 9.0],
+        "netback_asia": [10.05, 10.05, 9.8],
+        "asia_route": ["Panama", "Panama", "Cape"],
+    })
+    figure = charts.arb_over_time_chart(table, threshold=0.10)
+
+    bars = {trace.name: trace for trace in figure.data}
+    assert set(bars) == {"Europe", "Asia"}                  # no empty Indifferent/Cancel traces
+    assert len(bars["Asia"].y) == 2                         # two Asia months
+    assert bars["Asia"].marker.color == charts.OUTCOME_COLOURS["Asia"]

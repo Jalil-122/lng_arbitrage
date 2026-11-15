@@ -111,6 +111,15 @@ def load_market_prices():
     return prices, datetime.now(timezone.utc)
 
 
+@st.cache_data(ttl=config.HISTORY_CACHE_SECONDS)
+def load_history():
+    """Fetch the monthly history (FRED + Yahoo JKM), kept in memory for 24 hours.
+
+    History only changes once a month, so there's no need to download it more often.
+    """
+    return market_data.get_history()
+
+
 # ---------------------------------------------------------------------------
 # 2. Evaluations: the trader's inputs and the result, kept in memory
 # ---------------------------------------------------------------------------
@@ -900,6 +909,68 @@ def live_market():
 
 
 # ---------------------------------------------------------------------------
+# 10. History tab (V3)
+# ---------------------------------------------------------------------------
+
+# Period selector: label -> number of years (None = everything)
+HISTORY_PERIODS = {"1Y": 1, "3Y": 3, "5Y": 5, "All": None}
+
+
+def history_inputs():
+    """The cost assumptions applied to every month: the latest ones (last evaluation, or defaults).
+
+    arb_inputs also needs gas prices, but historical_arb replaces them with each
+    month's prices, so zeros are fine here.
+    """
+    placeholder_gas = {"henry_hub": 0.0, "ttf_eur_mwh": 0.0, "eurusd": 1.0, "jkm": 0.0}
+    inputs, _ = arb_inputs(placeholder_gas, current_costs())
+    return inputs
+
+
+def history_tab():
+    """The History tab: how the Europe/Asia arb looked month by month since 2014."""
+    history = load_history()
+
+    # If any download failed, say which and stop here (the Evaluate tab still works)
+    failed = [series for series in history.values() if series.status == "failed"]
+    if failed:
+        names = ", ".join(series.name for series in failed)
+        st.error(f"Could not load the history for: {names}. Check your internet connection "
+                 "and reload the page later. The 'Evaluate a cargo' tab still works.")
+        return
+
+    inputs = history_inputs()
+    table = arb_calc.historical_arb(history["europe"].values, history["henry_hub"].values,
+                                    history["jkm"].values, inputs)
+
+    section_header("Arb history · month by month")
+    first, last = table["month"].iloc[0], table["month"].iloc[-1]
+    st.caption(f"Each month is priced like today's evaluation: that month's average gas prices "
+               f"with **your current costs** (freight, regas, fees, threshold). Freight and regas "
+               f"history isn't free anywhere, so this shows how **gas prices alone** moved the arb. "
+               f"Data: {first:%b %Y} to {last:%b %Y}, {len(table)} months.")
+
+    # st.segmented_control: a row of buttons where one option is selected at a time
+    period = st.segmented_control("Period", list(HISTORY_PERIODS), default="All",
+                                  label_visibility="collapsed")
+    if period is None:          # clicking the selected button again un-selects it
+        period = "All"
+    shown = arb_calc.last_years(table, HISTORY_PERIODS[period])
+
+    st.plotly_chart(charts.arb_over_time_chart(shown, inputs["threshold"]),
+                    width="stretch", config={"displayModeBar": False})
+    st.caption("Bars above zero: Asia paid more. Below zero: Europe paid more. "
+               "Shaded band: Indifferent (± threshold). Red: the cargo would have been cancelled. "
+               "Hover a bar for both netbacks and the route.")
+
+    # Sources and timestamps, as for every price in the app
+    source_lines = [f"{series.name}: {series.source}, downloaded "
+                    f"{series.fetched_at:%d %b %H:%M UTC}, last month {series.values.index[-1]:%b %Y}"
+                    for series in history.values()]
+    st.caption("Sources · " + " · ".join(source_lines))
+
+
+# ---------------------------------------------------------------------------
 # Main page: runs top to bottom
 # ---------------------------------------------------------------------------
 
@@ -933,25 +1004,32 @@ if evaluation is None:
 
 show_sidebar_summary(evaluation)
 
-if evaluation is None:
-    st.warning("Market prices are unavailable. Click **Evaluate a cargo** and type them in.")
-else:
-    if evaluation["indicative"]:
-        st.caption("INDICATIVE · live market prices with default costs. "
-                   "Click **Evaluate a cargo** to enter your own.")
+# st.tabs splits the page into tabs; "with tab:" puts everything below it inside that tab
+evaluate_tab, history_tab_box = st.tabs(["Evaluate a cargo", "History"])
+
+with evaluate_tab:
+    if evaluation is None:
+        st.warning("Market prices are unavailable. Click **Evaluate a cargo** and type them in.")
     else:
-        st.caption(f"YOUR EVALUATION · {evaluation['time'].strftime('%H:%M UTC')} "
-                   "· details in the sidebar")
-    show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
+        if evaluation["indicative"]:
+            st.caption("INDICATIVE · live market prices with default costs. "
+                       "Click **Evaluate a cargo** to enter your own.")
+        else:
+            st.caption(f"YOUR EVALUATION · {evaluation['time'].strftime('%H:%M UTC')} "
+                       "· details in the sidebar")
+        show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
 
-    section_header("Routes from Sabine Pass")
-    # config={"displayModeBar": False} hides Plotly's toolbar, for a cleaner look
-    st.plotly_chart(charts.route_map(evaluation["result"], evaluation["inputs"]),
-                    width="stretch", config={"displayModeBar": False})
+        section_header("Routes from Sabine Pass")
+        # config={"displayModeBar": False} hides Plotly's toolbar, for a cleaner look
+        st.plotly_chart(charts.route_map(evaluation["result"], evaluation["inputs"]),
+                        width="stretch", config={"displayModeBar": False})
 
-    show_netbacks(evaluation["result"], evaluation["inputs"])
-    show_margins(evaluation["result"])
-    show_sensitivity(evaluation)
+        show_netbacks(evaluation["result"], evaluation["inputs"])
+        show_margins(evaluation["result"])
+        show_sensitivity(evaluation)
 
-st.divider()   # a thin horizontal line
-live_market()
+    st.divider()   # a thin horizontal line
+    live_market()
+
+with history_tab_box:
+    history_tab()
