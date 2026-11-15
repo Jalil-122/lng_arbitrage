@@ -318,3 +318,53 @@ def arb_over_time_chart(table, threshold):
         yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
     )
     return figure
+
+
+def history_layout(figure, y_title, height=320):
+    """The common dark look of the History charts (saves repeating it twice)."""
+    figure.update_layout(
+        height=height,
+        margin={"l": 10, "r": 10, "t": 10, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": TEXT, "family": MONO, "size": 11},
+        legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
+        xaxis={"gridcolor": GRID, "zeroline": False},
+        yaxis={"title": y_title, "gridcolor": GRID, "zeroline": False},
+    )
+    return figure
+
+
+def win_rate_by_year_chart(by_year):
+    """Stacked bars: for each year, the % of months won by each outcome (adds up to 100%).
+
+    by_year: the table from arb_calc.win_rates_by_year.
+    """
+    figure = go.Figure()
+    for name in OUTCOME_ORDER:
+        figure.add_trace(go.Bar(
+            x=by_year["year"], y=by_year[name], name=name,
+            marker={"color": OUTCOME_COLOURS[name]},
+            hovertemplate="%{x} · " + name + " %{y:.0f}% of months<extra></extra>",
+        ))
+    # "stack": the outcomes sit on top of each other. Plotly then lists a stacked
+    # legend backwards; traceorder="normal" keeps it Europe, Asia, Indifferent, Cancel.
+    figure.update_layout(barmode="stack", legend_traceorder="normal")
+    figure.update_xaxes(dtick=1)            # one label per year
+    return history_layout(figure, "% of months")
+
+
+def seasonality_chart(season):
+    """Bars: the average spread for each calendar month (amber = Asia, blue = Europe).
+
+    season: the table from arb_calc.seasonality.
+    """
+    colours = [OUTCOME_COLOURS["Asia"] if spread > 0 else OUTCOME_COLOURS["Europe"]
+               for spread in season["average_spread"]]
+    figure = go.Figure(go.Bar(
+        x=season["month_name"], y=season["average_spread"],
+        marker={"color": colours},
+        customdata=season["months"],
+        hovertemplate="%{x} · average spread %{y:+.2f}<br>based on %{customdata} months<extra></extra>",
+    ))
+    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+    return history_layout(figure, "Average spread Asia − Europe ($/MMBtu)")

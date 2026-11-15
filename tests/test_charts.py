@@ -60,3 +60,21 @@ def test_arb_over_time_has_one_coloured_bar_set_per_outcome():
     assert set(bars) == {"Europe", "Asia"}                  # no empty Indifferent/Cancel traces
     assert len(bars["Asia"].y) == 2                         # two Asia months
     assert bars["Asia"].marker.color == charts.OUTCOME_COLOURS["Asia"]
+
+
+def test_win_rate_chart_stacks_the_four_outcomes():
+    import pandas as pd
+    by_year = pd.DataFrame({"year": [2025, 2026], "Europe": [50.0, 0.0], "Asia": [50.0, 0.0],
+                            "Indifferent": [0.0, 50.0], "Cancel": [0.0, 50.0]})
+    figure = charts.win_rate_by_year_chart(by_year)
+    assert [trace.name for trace in figure.data] == charts.OUTCOME_ORDER
+    assert figure.layout.barmode == "stack"
+
+
+def test_seasonality_colours_follow_the_sign():
+    import pandas as pd
+    season = pd.DataFrame({"month_number": [1, 2], "month_name": ["Jan", "Feb"],
+                           "average_spread": [0.725, -0.60], "months": [2, 2]})
+    figure = charts.seasonality_chart(season)
+    assert list(figure.data[0].marker.color) == [charts.OUTCOME_COLOURS["Asia"],
+                                                 charts.OUTCOME_COLOURS["Europe"]]

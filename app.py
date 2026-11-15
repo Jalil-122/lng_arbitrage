@@ -963,6 +963,36 @@ def history_tab():
                "Shaded band: Indifferent (± threshold). Red: the cargo would have been cancelled. "
                "Hover a bar for both netbacks and the route.")
 
+    # Win rates: one tile per outcome, then a stacked bar per calendar year
+    section_header(f"Win rates · {period} ({len(shown)} months)")
+    rates = arb_calc.win_rates(shown)
+    tiles = st.columns(len(arb_calc.OUTCOMES))
+    for tile, name in zip(tiles, arb_calc.OUTCOMES):   # zip pairs each tile with an outcome
+        months_won = int((shown["outcome"] == name).sum())
+        # delta_arrow="off": the month count is a count, not a rise, so no ↑ arrow
+        tile.metric(name, f"{rates[name]:.0f}%", f"{months_won} months",
+                    delta_color="off", delta_arrow="off")
+    st.plotly_chart(charts.win_rate_by_year_chart(arb_calc.win_rates_by_year(shown)),
+                    width="stretch", config={"displayModeBar": False})
+    st.caption("Share of months each destination paid more, per calendar year. "
+               "The first and last years may be partial.")
+
+    # Seasonality: the average spread per calendar month
+    section_header(f"Seasonality · {period}")
+    st.plotly_chart(charts.seasonality_chart(arb_calc.seasonality(shown)),
+                    width="stretch", config={"displayModeBar": False})
+    st.caption("Average spread for each calendar month over the period: amber when Asia "
+               "paid more on average, blue when Europe did. Hover a bar to see how many months "
+               "it averages (with 1Y, each bar is a single month).")
+
+    # The monthly table, to download
+    st.download_button(
+        f"⬇️ Download the monthly arb ({period}, CSV)",
+        data=shown.round(4).to_csv(index=False),
+        file_name=f"lng_arb_history_{period}.csv",
+        mime="text/csv",
+    )
+
     # Sources and timestamps, as for every price in the app
     source_lines = [f"{series.name}: {series.source}, downloaded "
                     f"{series.fetched_at:%d %b %H:%M UTC}, last month {series.values.index[-1]:%b %Y}"
