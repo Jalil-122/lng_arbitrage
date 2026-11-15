@@ -1,18 +1,18 @@
 # Streamlit settings for this project (read automatically by "streamlit run").
 # [theme] = the colours and fonts of the whole app.
-# Look (since the V4 design refresh): light "fintech" cards with a navy accent,
-# plus a dark navy price strip at the top for the trading-desk feel.
+# Look (since the V4 design refresh): warm "parchment" page with paper-like cards,
+# a charcoal accent, and a dark charcoal price strip at the top for the trading-desk feel.
 
 [theme]
 base = "light"
 
-# Navy accent: buttons, selected tabs, switches
-primaryColor = "#0C2340"
+# Warm charcoal accent: buttons, selected tabs, switches
+primaryColor = "#2B2A28"
 
-backgroundColor = "#F6F7FB"            # page: very light grey-blue, so white cards stand out
-secondaryBackgroundColor = "#FFFFFF"   # inputs, expanders, pop-up fields
-textColor = "#1B2A3D"                  # dark navy-grey text (softer than pure black)
-borderColor = "#E3E7EF"
+backgroundColor = "#EDE3CF"            # page: parchment
+secondaryBackgroundColor = "#F7F0E1"   # inputs, expanders, pop-up fields: lighter paper
+textColor = "#2B2A28"                  # warm charcoal text (softer than pure black)
+borderColor = "#D5C5A5"
 
 # Favourable / unfavourable colours used by Streamlit (e.g. metric arrows)
 greenColor = "#0F6E56"
@@ -21,4 +21,4 @@ redColor = "#C0392B"
 baseFontSize = 14
 baseRadius = "large"                   # rounded corners, like cards in a modern app
 
-dataframeHeaderBackgroundColor = "#F1F3F8"
+dataframeHeaderBackgroundColor = "#EFE6D3"

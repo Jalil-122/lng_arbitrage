@@ -13,16 +13,16 @@ import plotly.graph_objects as go
 
 import config
 
-# Colours (same palette as the light theme in .streamlit/config.toml)
+# Colours (same parchment palette as the theme in .streamlit/config.toml)
 ACCENT = "#1D9E75"        # green: the winning route, the "spread" lines
-NAVY = "#0C2340"          # the chosen port and the destinations, dark text
-DIM = "#9AA4B2"           # grey: the other routes
-CLOSED = "#C5CBD5"        # light grey: a closed route (dashed)
+INK = "#2B2A28"          # warm charcoal: the chosen port and the destinations, dark text
+DIM = "#9C917C"           # warm grey: the other routes
+CLOSED = "#C9BC9F"        # light beige: a closed route (dashed)
 OPEN_GREEN = "#1D9E75"    # a passage that is open
 CLOSED_RED = "#E24B4A"    # a passage that is closed / avoided / disrupted
-LAND = "#E6EAF1"
-BORDERS = "#CDD3DD"
-OCEAN = "#F1F5FA"         # a faint blue-grey, so the globe stands out from the white card
+LAND = "#E3D6BB"
+BORDERS = "#C9B892"
+OCEAN = "#F2EBDC"         # a lighter parchment, so the globe stands out from the card
 MONO = "JetBrains Mono, SF Mono, Menlo, Consolas, monospace"
 SANS = "Inter, -apple-system, Helvetica Neue, Arial, sans-serif"
 
@@ -80,8 +80,8 @@ def add_points(figure, points, names, hover, colour, size, symbol="circle", text
         hovertext=hover,
         hoverinfo="text",
         marker={"size": size, "color": colour, "symbol": symbol,
-                "line": {"width": 1, "color": "#FFFFFF"}},
-        textfont={"color": NAVY, "size": 11, "family": SANS},
+                "line": {"width": 1, "color": "#F7F0E1"}},
+        textfont={"color": INK, "size": 11, "family": SANS},
     ))
 
 
@@ -130,7 +130,7 @@ def route_map(result):
         middle = halfway_point(points)
         figure.add_trace(go.Scattergeo(
             lat=[middle[0]], lon=[middle[1]], mode="text", text=[label],
-            textfont={"color": colour if route_key in winners else "#5F6B7A",
+            textfont={"color": colour if route_key in winners else "#6E6250",
                       "size": 11, "family": MONO},
             hoverinfo="skip",
         ))
@@ -162,7 +162,7 @@ def route_map(result):
                [port["point"], config.PORT_GATE, config.PORT_TOKYO_BAY],
                names=[port["name"], "Gate", "Tokyo Bay"],
                hover=[f"{port['name']} (load port)", "Gate, Rotterdam (TTF)", "Tokyo Bay (JKM)"],
-               colour=NAVY, size=9,
+               colour=INK, size=9,
                text_position=["top center", "top center", "top center"])
 
     # The map itself: dark land, no frame, cropped from Cape Horn to Hammerfest
@@ -189,11 +189,11 @@ def route_map(result):
 # Breakeven chart (V2): how the spread moves with one price
 # ---------------------------------------------------------------------------
 
-GRID = "#EEF1F6"
-TEXT = "#1B2A3D"
+GRID = "#E3D8C2"
+TEXT = "#2B2A28"
 GREEN = "#0F6E56"
 RED = "#A32D2D"
-BAND = "#9AA4B2"          # the grey "indifferent" band and the zero line
+BAND = "#9C917C"          # the warm grey "indifferent" band and the zero line
 
 
 def chart_range(current, breakeven, pct=config.SENSITIVITY_RANGE_PCT):
@@ -234,7 +234,7 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
     # Today: a dot on the line
     figure.add_trace(go.Scatter(
         x=[current_price], y=[current_spread], mode="markers+text",
-        marker={"size": 10, "color": ACCENT, "line": {"width": 2, "color": "#FFFFFF"}},
+        marker={"size": 10, "color": ACCENT, "line": {"width": 2, "color": "#F7F0E1"}},
         text=[f"Now {unit_prefix}{current_price:.2f}"], textposition="middle right",
         textfont={"color": ACCENT, "family": MONO, "size": 12},
         hoverinfo="skip",
@@ -268,7 +268,7 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
 OUTCOME_COLOURS = {
     "Europe": "#3D7DD8",        # blue
     "Asia": "#E8A33D",          # amber-orange
-    "Indifferent": "#C5CBD5",   # light slate
+    "Indifferent": "#C9BC9F",   # light beige
     "Cancel": "#E24B4A",        # red
 }
 OUTCOME_ORDER = ["Europe", "Asia", "Indifferent", "Cancel"]
@@ -311,9 +311,9 @@ def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
     # Today's evaluation: a white cross
     figure.add_trace(go.Scatter(
         x=[current_jkm], y=[current_freight], mode="markers+text",
-        marker={"symbol": "x", "size": 14, "color": NAVY, "line": {"width": 1, "color": "#FFFFFF"}},
+        marker={"symbol": "x", "size": 14, "color": INK, "line": {"width": 1, "color": "#F7F0E1"}},
         text=["Now"], textposition="top right",
-        textfont={"color": NAVY, "family": MONO, "size": 12},
+        textfont={"color": INK, "family": MONO, "size": 12},
         hoverinfo="skip", showlegend=False,
     ))
 

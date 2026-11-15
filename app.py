@@ -34,20 +34,22 @@ st.set_page_config(page_title="LNG Arb: Europe or Asia", page_icon="🚢", layou
 
 
 # ---------------------------------------------------------------------------
-# Look: light "fintech" cards with a navy price strip (V4 design refresh)
+# Look: parchment page, paper cards and a charcoal price strip (V4 design refresh)
 # ---------------------------------------------------------------------------
 # The base colours come from .streamlit/config.toml. This block of CSS (the
 # language web pages use for styling) adds what the theme can't do on its own:
 # the fonts, white cards, the price strip and the verdict card.
 
-NAVY = "#0C2340"          # titles, the price strip, main buttons
-MUTED_TEXT = "#5F6B7A"    # grey for labels
+INK = "#2B2A28"          # warm charcoal: titles, the price strip, main buttons
+MUTED_TEXT = "#6E6250"    # warm brown-grey for labels
+CARD = "#F7F0E1"          # card background: light paper, on the parchment page
+CARD_BORDER = "#D5C5A5"   # card border: a darker parchment line
 GREEN_TEXT = "#085041"    # text on a green pill
 GREEN_BG = "#E1F5EE"      # green pill (a winning destination, an open passage)
 RED_TEXT = "#791F1F"      # text on a red pill
 RED_BG = "#FCEBEB"        # red pill (cancel, a closed passage)
 GREY_TEXT = "#3D4A5C"     # text on a grey pill
-GREY_BG = "#EEF1F6"       # grey pill (indifferent)
+GREY_BG = "#E6DCC6"       # grey-beige pill (indifferent)
 SANS = '"Inter", -apple-system, "Helvetica Neue", Arial, sans-serif'
 MONO = '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace'
 
@@ -64,15 +66,15 @@ html, body, p, li, label, input, button, h1, h2, h3, td, th {{ font-family: {SAN
 
 /* Cards: every bordered box (st.container(border=True)) becomes a white rounded card */
 [data-testid="stVerticalBlockBorderWrapper"] {{
-    background: #FFFFFF; border: 1px solid #E3E7EF !important; border-radius: 14px;
+    background: {CARD}; border: 1px solid {CARD_BORDER} !important; border-radius: 14px;
 }}
 
 /* Number tiles (st.metric): a small white card each, numbers in the mono font */
 [data-testid="stMetric"] {{
-    background: #FFFFFF; border: 1px solid #E3E7EF; border-radius: 12px; padding: 12px 14px;
+    background: {CARD}; border: 1px solid {CARD_BORDER}; border-radius: 12px; padding: 12px 14px;
 }}
 [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {{
-    font-family: {MONO}; font-variant-numeric: tabular-nums; color: {NAVY};
+    font-family: {MONO}; font-variant-numeric: tabular-nums; color: {INK};
 }}
 [data-testid="stMetricLabel"] p {{ font-size: .78rem; color: {MUTED_TEXT}; }}
 
@@ -84,17 +86,17 @@ html, body, p, li, label, input, button, h1, h2, h3, td, th {{ font-family: {SAN
 
 /* Header */
 .app-kicker {{ color: {MUTED_TEXT}; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }}
-.app-title  {{ font-size: 1.9rem; font-weight: 600; color: {NAVY}; margin: .1rem 0 .2rem 0; }}
+.app-title  {{ font-size: 1.9rem; font-weight: 600; color: {INK}; margin: .1rem 0 .2rem 0; }}
 .app-sub    {{ color: {MUTED_TEXT}; font-size: .86rem; }}
 
 /* Price strip: the dark navy band at the top, like a trading-desk ticker */
 .price-strip {{
-    background: {NAVY}; color: #B5C3D6; border-radius: 10px; padding: 9px 16px;
+    background: {INK}; color: #CFC6B4; border-radius: 10px; padding: 9px 16px;
     font-family: {MONO}; font-size: .8rem; display: flex; flex-wrap: wrap; gap: 6px 22px;
     margin-bottom: .9rem;
 }}
 .price-strip b {{ color: #FFFFFF; font-weight: 500; }}
-.price-strip .when {{ margin-left: auto; color: #8796AB; }}
+.price-strip .when {{ margin-left: auto; color: #A89F8C; }}
 
 /* Small rounded tags (passages) and pills (the verdict's gain) */
 .tag {{ display: inline-block; font-size: .74rem; padding: 3px 11px; border-radius: 999px; margin: 0 6px 6px 0; }}
@@ -102,11 +104,11 @@ html, body, p, li, label, input, button, h1, h2, h3, td, th {{ font-family: {SAN
 
 /* Verdict card: a plain-English sentence, with the gain in a coloured pill */
 .verdict-card {{
-    background: #FFFFFF; border: 1px solid #E3E7EF; border-radius: 14px; padding: 16px 20px;
+    background: {CARD}; border: 1px solid {CARD_BORDER}; border-radius: 14px; padding: 16px 20px;
     display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
 }}
 .verdict-kicker {{ font-size: .8rem; color: {MUTED_TEXT}; }}
-.verdict-text {{ font-size: 1.6rem; font-weight: 600; color: {NAVY}; line-height: 1.25; }}
+.verdict-text {{ font-size: 1.6rem; font-weight: 600; color: {INK}; line-height: 1.25; }}
 .verdict-note {{ font-size: .75rem; color: {MUTED_TEXT}; text-align: right; margin-top: 4px; }}
 </style>
 """
@@ -1455,7 +1457,7 @@ with evaluate_tab:
         show_key_numbers(evaluation)
         show_evaluation_summary(evaluation)
 
-        # st.container(border=True) draws a box; the CSS above turns it into a white card
+        # st.container(border=True) draws a box; the CSS above turns it into a paper card
         with st.container(border=True):
             section_header(f"Routes from {port_name(evaluation['inputs']['port_key'])}")
             # config: hide Plotly's toolbar, and don't zoom the map when scrolling the page
@@ -1477,5 +1479,5 @@ with evaluate_tab:
         live_market()
 
 with history_tab_box:
-    with st.container(border=True):   # one white card for the whole History tab
+    with st.container(border=True):   # one paper card for the whole History tab
         history_tab()
