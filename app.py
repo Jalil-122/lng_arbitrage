@@ -100,7 +100,7 @@ apply_terminal_style()
 # is sure to find the old prices expired and fetch new ones.
 @st.cache_data(ttl=config.REFRESH_SECONDS - 10)
 def load_market_prices():
-    """Fetch HH, TTF, EURUSD, the JKM settlement and the contract months (cached 5 minutes).
+    """Fetch HH, TTF, EURUSD, the JKM futures settlement and the contract months (cached 5 minutes).
 
     Returns two things: (the prices, the time we fetched them).
     The fetch time lets us log exactly one row per real refresh.
@@ -510,8 +510,9 @@ def evaluate_dialog(prices):
     """Pop-up: choose the port, enter prices and costs, click Evaluate, see the answer at once."""
     costs = current_costs()
 
-    st.caption("Gas prices are prefilled from the market (yfinance, delayed; JKM is "
-               "yesterday's settlement). Change any number, then click **Evaluate**. "
+    st.caption("Gas prices are prefilled from the market (yfinance, delayed; JKM is the "
+               "last daily settlement of the CME JKM futures). Change any number, then click "
+               "**Evaluate**. "
                "All prices in USD/MMBtu unless stated.")
 
     # Every change in the pop-up re-runs only the pop-up (it's cheap: nothing is
@@ -531,7 +532,7 @@ def evaluate_dialog(prices):
         index=[DELIVERY_FRONT, DELIVERY_M1].index(costs["delivery_pricing"]),
         help="Front month: HH and TTF front month. M+1 delivery: HH for the loading "
              "month and TTF for the month the cargo arrives in Europe. JKM stays the "
-             "daily settlement (Yahoo has no JKM contract months).")
+             "futures daily settlement (Yahoo has no JKM contract months).")
 
     # The market prices for the chosen pricing, and their names (e.g. "TTF Jan-27")
     market = market_gas_prices(prices, delivery_pricing)
@@ -557,7 +558,10 @@ def evaluate_dialog(prices):
                                 format="%.2f", value=market["ttf_eur_mwh"] or 0.0)
     eurusd = boxes[1].number_input("EURUSD", min_value=0.0, step=0.005, format="%.4f",
                                    value=market["eurusd"] or 0.0)
-    jkm = boxes[2].number_input("JKM", min_value=0.0, step=0.05, format="%.3f",
+    jkm = boxes[2].number_input("JKM (CME futures)", min_value=0.0, step=0.05, format="%.3f",
+                                help="The CME JKM futures front month, last daily settlement. "
+                                     "It can differ from the Platts JKM spot assessment by "
+                                     "$1-2/MMBtu: type a spot price here if you have one.",
                                 value=market["jkm"])
 
     section_header("2 · Passages")
@@ -592,6 +596,9 @@ def evaluate_dialog(prices):
                             index=[FREIGHT_SIMPLE, FREIGHT_DETAILED].index(costs["freight_mode"]),
                             label_visibility="collapsed")
     new_costs["freight_mode"] = freight_mode
+    st.caption("Freight here = charter hire for the round trip + canal tolls (+ boil-off in "
+               "Detailed mode). It **excludes** ballast-leg fuel, port and agency costs, so it "
+               "is a floor: published freight assessments (e.g. Platts) are higher.")
 
     if freight_mode == FREIGHT_SIMPLE:
         st.caption("Prefilled from the charter model with the default voyage inputs.")
@@ -607,7 +614,10 @@ def evaluate_dialog(prices):
     else:
         c1, c2, c3, c4 = st.columns(4)
         new_costs["charter_rate"] = c1.number_input(
-            "Charter rate ($/day)", min_value=0, step=5_000, value=int(costs["charter_rate"]))
+            "Charter rate ($/day)", min_value=0, step=5_000, value=int(costs["charter_rate"]),
+            help="Default $52,000/day: the one-year time-charter rate, late Oct 2026 "
+                 "(IndexBox). Spot varies by route: ~$25k US Gulf→Europe, ~$59k "
+                 "US Gulf→Japan, ~$33k Australia→Japan. Update it from a broker report.")
         new_costs["cargo_mmbtu"] = c2.number_input(
             "Cargo loaded (MMBtu)", min_value=1, step=100_000, value=int(costs["cargo_mmbtu"]))
         new_costs["boil_off_pct_per_day"] = c3.number_input(
@@ -762,7 +772,7 @@ def show_sidebar_summary(evaluation):
         (f"{names['ttf']} (EUR/MWh)", f"{inputs['ttf_eur_mwh']:.2f} · {sources['ttf_eur_mwh']}"),
         ("EURUSD", f"{inputs['eurusd']:.4f} · {sources['eurusd']}"),
         ("TTF ($/MMBtu)", f"{result['ttf_usd']:.3f} · converted"),
-        ("JKM", f"{inputs['jkm']:.3f} · {sources['jkm']}"),
+        ("JKM (CME futures)", f"{inputs['jkm']:.3f} · {sources['jkm']}"),
     ]
     sb.markdown(markdown_table(rows))
 
@@ -1049,7 +1059,7 @@ def show_price_panel(quotes):
     # A pandas DataFrame is a table; st.dataframe draws it on the page
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     st.caption("Status: 🟢 under 20 min old · 🟡 20 to 60 min · 🔴 over 60 min or fetch failed. "
-               "Markets closed (e.g. weekends) show 🔴. JKM is a daily settlement, so always 🔴.")
+               "Markets closed (e.g. weekends) show 🔴. JKM is a futures daily settlement, so always 🔴.")
 
 
 # ---------------------------------------------------------------------------

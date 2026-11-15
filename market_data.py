@@ -141,7 +141,7 @@ def get_market_prices():
         "eurusd": fetch_yfinance_quote("EURUSD", config.TICKER_EURUSD, "USD per EUR"),
         # JKM: Yahoo only has daily settlements, so we ask for daily bars over a month
         "jkm_settlement": fetch_yfinance_quote(
-            "JKM settlement", config.TICKER_JKM, "USD/MMBtu",
+            "JKM futures (CME)", config.TICKER_JKM, "USD/MMBtu",
             period="1mo", interval="1d", source=config.SOURCE_YFINANCE_DAILY,
         ),
     }

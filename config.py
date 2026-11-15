@@ -40,7 +40,10 @@ HISTORY_CACHE_SECONDS = 24 * 60 * 60    # keep history 24 hours: it only changes
 HISTORY_TIMEOUT_SECONDS = 20            # give up on a download after 20 seconds
 
 SOURCE_YFINANCE = "yfinance (delayed)"   # label shown next to every yfinance price
-SOURCE_YFINANCE_DAILY = "yfinance (daily settlement)"   # label for once-a-day prices (JKM)
+SOURCE_YFINANCE_DAILY = "yfinance (CME futures, daily settlement)"   # label for once-a-day prices (JKM)
+# JKM=F is the CME JKM FUTURES front month (settled on Platts), not the Platts spot
+# assessment itself. The two can differ by $1-2 (e.g. 12 Nov 2026: futures ~31.35,
+# Reuters spot reference ~29.67), so the app labels it as futures.
 SOURCE_USER = "User input"               # label shown next to every sidebar input
 
 
@@ -79,7 +82,11 @@ INPUT_STEP = 0.05                  # how much each +/- click changes a sidebar i
 # Boil-off = share of the cargo that evaporates on the LADEN (loaded) leg.
 
 DEFAULT_CARGO_MMBTU = 3_500_000      # MMBtu loaded (a standard ~174,000 m3 carrier)
-DEFAULT_CHARTER_RATE = 80_000        # USD per day for the ship
+DEFAULT_CHARTER_RATE = 52_000        # USD per day for the ship. Source: one-year time-charter
+                                     # rate ~$51,800/day, late Oct 2026 (IndexBox). Spot varies by
+                                     # route: ~$25,400 US Gulf->Europe, ~$58,900 US Gulf->Japan,
+                                     # ~$32,800 Australia->Japan. It spiked to $160k-300k in the
+                                     # March 2026 Hormuz crisis. Update it from a broker report.
 DEFAULT_BOIL_OFF_PCT_PER_DAY = 0.10  # % of the cargo lost per laden day
 
 DEFAULT_DAYS_NWE = 14                # one-way days, Sabine Pass -> North-West Europe

@@ -249,7 +249,7 @@ lng_arbitrage/
 | Input | Default | Unit |
 |---|---|---|
 | Cargo size (loaded) | 3,500,000 | MMBtu |
-| Charter rate | 80,000 | USD/day |
+| Charter rate | 80,000 (52,000 since V4, see 14.2) | USD/day |
 | Boil-off rate | 0.10 | % of cargo per laden day |
 | One-way days, Sabine Pass → NWE | 14 | days |
 | One-way days, Sabine Pass → North Asia via Panama | 25 | days |
@@ -450,6 +450,8 @@ The real LNG routes in 2026 are not a textbook case:
 | Return leg | Ballast returns the same way it came (as in V2): tolls are paid twice |
 | Cost of the cargo | **US ports**: unchanged (115% HH + liquefaction fee), so the **lift / cancel** verdict stays. **Non-US ports**: **destination only** ("→ ASIA, wins by $x"). These cargoes mostly sell on oil-linked long-term contracts with no cancel option, so no FOB cost, margin or Cancel is shown |
 | History tab, log | Unchanged: they stay **Sabine Pass** (US) based, and say so |
+| JKM label (data check, Nov 2026) | Shown as **"JKM futures (CME)"**: Yahoo's `JKM=F` is the futures front month, which can differ from the Platts spot assessment by $1-2. The box stays editable for a spot price |
+| Charter rate default (data check, Nov 2026) | **$52,000/day** (one-year time charter, late Oct 2026, IndexBox) instead of V2's $80,000. The pop-up states that freight excludes ballast fuel, port and agency costs, so it is a floor |
 
 ### 14.3 Formulas
 
