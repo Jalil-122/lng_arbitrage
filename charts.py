@@ -13,15 +13,18 @@ import plotly.graph_objects as go
 
 import config
 
-# Colours (same palette as the dark terminal theme in .streamlit/config.toml)
-ACCENT = "#FFB000"        # amber: the winning route, the chosen port
-DIM = "#5B6676"           # grey: the other routes
-CLOSED = "#3A4250"        # dark grey: a closed route
-OPEN_GREEN = "#2EBD85"    # a passage that is open
-CLOSED_RED = "#F6465D"    # a passage that is closed / avoided / disrupted
-LAND = "#1B222C"
-BORDERS = "#2A323D"
-MONO = "SF Mono, Menlo, Consolas, monospace"
+# Colours (same palette as the light theme in .streamlit/config.toml)
+ACCENT = "#1D9E75"        # green: the winning route, the "spread" lines
+NAVY = "#0C2340"          # the chosen port and the destinations, dark text
+DIM = "#9AA4B2"           # grey: the other routes
+CLOSED = "#C5CBD5"        # light grey: a closed route (dashed)
+OPEN_GREEN = "#1D9E75"    # a passage that is open
+CLOSED_RED = "#E24B4A"    # a passage that is closed / avoided / disrupted
+LAND = "#E6EAF1"
+BORDERS = "#CDD3DD"
+OCEAN = "#F1F5FA"         # a faint blue-grey, so the globe stands out from the white card
+MONO = "JetBrains Mono, SF Mono, Menlo, Consolas, monospace"
+SANS = "Inter, -apple-system, Helvetica Neue, Arial, sans-serif"
 
 
 def highlighted_routes(result):
@@ -77,8 +80,8 @@ def add_points(figure, points, names, hover, colour, size, symbol="circle", text
         hovertext=hover,
         hoverinfo="text",
         marker={"size": size, "color": colour, "symbol": symbol,
-                "line": {"width": 1, "color": "#0B0E13"}},
-        textfont={"color": "#D9DEE5", "size": 11, "family": MONO},
+                "line": {"width": 1, "color": "#FFFFFF"}},
+        textfont={"color": NAVY, "size": 11, "family": SANS},
     ))
 
 
@@ -86,7 +89,7 @@ def route_map(result):
     """World map: the chosen port's routes, labelled with their netbacks, plus every
     port and passage.
 
-    The winning route is thick amber, the other open routes thin grey, and closed
+    The winning route is thick green, the other open routes thin grey, and closed
     routes dashed. Passages are green when open, red when closed (hover for the name).
     """
     port_key = result["port"]
@@ -127,7 +130,7 @@ def route_map(result):
         middle = halfway_point(points)
         figure.add_trace(go.Scattergeo(
             lat=[middle[0]], lon=[middle[1]], mode="text", text=[label],
-            textfont={"color": colour if route_key in winners else "#9AA4B2",
+            textfont={"color": colour if route_key in winners else "#5F6B7A",
                       "size": 11, "family": MONO},
             hoverinfo="skip",
         ))
@@ -159,14 +162,14 @@ def route_map(result):
                [port["point"], config.PORT_GATE, config.PORT_TOKYO_BAY],
                names=[port["name"], "Gate", "Tokyo Bay"],
                hover=[f"{port['name']} (load port)", "Gate, Rotterdam (TTF)", "Tokyo Bay (JKM)"],
-               colour=ACCENT, size=9,
+               colour=NAVY, size=9,
                text_position=["top center", "top center", "top center"])
 
     # The map itself: dark land, no frame, cropped from Cape Horn to Hammerfest
     figure.update_geos(
         projection_type="natural earth",
         showland=True, landcolor=LAND,
-        showocean=True, oceancolor="#0B0E13",
+        showocean=True, oceancolor=OCEAN,
         showcountries=True, countrycolor=BORDERS,
         coastlinecolor=BORDERS, showlakes=False, showframe=False,
         lataxis_range=[-60, 75],
@@ -186,10 +189,11 @@ def route_map(result):
 # Breakeven chart (V2): how the spread moves with one price
 # ---------------------------------------------------------------------------
 
-GRID = "#1F2630"
-TEXT = "#D9DEE5"
-GREEN = "#2EBD85"
-RED = "#F6465D"
+GRID = "#EEF1F6"
+TEXT = "#1B2A3D"
+GREEN = "#0F6E56"
+RED = "#A32D2D"
+BAND = "#9AA4B2"          # the grey "indifferent" band and the zero line
 
 
 def chart_range(current, breakeven, pct=config.SENSITIVITY_RANGE_PCT):
@@ -210,9 +214,9 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
     figure = go.Figure()
 
     # Shaded band: inside it, the verdict is "Indifferent"
-    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor="#5B6676", opacity=0.18,
+    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor=BAND, opacity=0.18,
                      line_width=0)
-    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+    figure.add_hline(y=0, line={"color": BAND, "width": 1})
 
     # The spread line
     figure.add_trace(go.Scatter(
@@ -230,7 +234,7 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
     # Today: a dot on the line
     figure.add_trace(go.Scatter(
         x=[current_price], y=[current_spread], mode="markers+text",
-        marker={"size": 10, "color": ACCENT, "line": {"width": 2, "color": "#0B0E13"}},
+        marker={"size": 10, "color": ACCENT, "line": {"width": 2, "color": "#FFFFFF"}},
         text=[f"Now {unit_prefix}{current_price:.2f}"], textposition="middle right",
         textfont={"color": ACCENT, "family": MONO, "size": 12},
         hoverinfo="skip",
@@ -249,7 +253,7 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
-        font={"color": TEXT, "family": MONO, "size": 11},
+        font={"color": TEXT, "family": SANS, "size": 11},
         xaxis={"title": price_label, "gridcolor": GRID, "zeroline": False},
         yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
     )
@@ -264,8 +268,8 @@ def breakeven_chart(prices, spreads, current_price, current_spread, breakeven,
 OUTCOME_COLOURS = {
     "Europe": "#3D7DD8",        # blue
     "Asia": "#E8A33D",          # amber-orange
-    "Indifferent": "#3A4250",   # slate
-    "Cancel": "#F6465D",        # red
+    "Indifferent": "#C5CBD5",   # light slate
+    "Cancel": "#E24B4A",        # red
 }
 OUTCOME_ORDER = ["Europe", "Asia", "Indifferent", "Cancel"]
 
@@ -307,9 +311,9 @@ def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
     # Today's evaluation: a white cross
     figure.add_trace(go.Scatter(
         x=[current_jkm], y=[current_freight], mode="markers+text",
-        marker={"symbol": "x", "size": 14, "color": "white", "line": {"width": 1, "color": "#0B0E13"}},
+        marker={"symbol": "x", "size": 14, "color": NAVY, "line": {"width": 1, "color": "#FFFFFF"}},
         text=["Now"], textposition="top right",
-        textfont={"color": "white", "family": MONO, "size": 12},
+        textfont={"color": NAVY, "family": MONO, "size": 12},
         hoverinfo="skip", showlegend=False,
     ))
 
@@ -324,7 +328,7 @@ def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
         height=420,
         margin={"l": 10, "r": 10, "t": 10, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT, "family": MONO, "size": 11},
+        font={"color": TEXT, "family": SANS, "size": 11},
         legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
         xaxis={"title": "JKM ($/MMBtu)", "showgrid": False},
         yaxis={"title": f"Asia freight {route_name} ($/MMBtu)", "showgrid": False},
@@ -343,8 +347,8 @@ def arb_over_time_chart(table, threshold):
     The shaded band around zero is the "Indifferent" zone (+/- threshold).
     """
     figure = go.Figure()
-    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor="#5B6676", opacity=0.18, line_width=0)
-    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+    figure.add_hrect(y0=-threshold, y1=threshold, fillcolor=BAND, opacity=0.18, line_width=0)
+    figure.add_hline(y=0, line={"color": BAND, "width": 1})
 
     # One bar trace per outcome, so each gets its colour and its legend entry
     for name in OUTCOME_ORDER:
@@ -367,7 +371,7 @@ def arb_over_time_chart(table, threshold):
         bargap=0.15,
         margin={"l": 10, "r": 10, "t": 10, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT, "family": MONO, "size": 11},
+        font={"color": TEXT, "family": SANS, "size": 11},
         legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
         xaxis={"gridcolor": GRID, "zeroline": False},
         yaxis={"title": "Spread Asia − Europe ($/MMBtu)", "gridcolor": GRID, "zeroline": False},
@@ -376,12 +380,12 @@ def arb_over_time_chart(table, threshold):
 
 
 def history_layout(figure, y_title, height=320):
-    """The common dark look of the History charts (saves repeating it twice)."""
+    """The common look of the History charts (saves repeating it twice)."""
     figure.update_layout(
         height=height,
         margin={"l": 10, "r": 10, "t": 10, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": TEXT, "family": MONO, "size": 11},
+        font={"color": TEXT, "family": SANS, "size": 11},
         legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
         xaxis={"gridcolor": GRID, "zeroline": False},
         yaxis={"title": y_title, "gridcolor": GRID, "zeroline": False},
@@ -421,5 +425,5 @@ def seasonality_chart(season):
         customdata=season["months"],
         hovertemplate="%{x} · average spread %{y:+.2f}<br>based on %{customdata} months<extra></extra>",
     ))
-    figure.add_hline(y=0, line={"color": "#5B6676", "width": 1})
+    figure.add_hline(y=0, line={"color": BAND, "width": 1})
     return history_layout(figure, "Average spread Asia − Europe ($/MMBtu)")

@@ -1,24 +1,24 @@
 # Streamlit settings for this project (read automatically by "streamlit run").
-# [theme] = the colours and fonts of the whole app: a dark trading-terminal look.
+# [theme] = the colours and fonts of the whole app.
+# Look (since the V4 design refresh): light "fintech" cards with a navy accent,
+# plus a dark navy price strip at the top for the trading-desk feel.
 
 [theme]
-base = "dark"
+base = "light"
 
-# Amber accent, the classic trading-terminal colour (buttons, highlights)
-primaryColor = "#FFB000"
+# Navy accent: buttons, selected tabs, switches
+primaryColor = "#0C2340"
 
-backgroundColor = "#0B0E13"            # page: near-black
-secondaryBackgroundColor = "#141A22"   # panels, inputs, sidebar
-textColor = "#D9DEE5"                  # light grey text (easier on the eyes than pure white)
-borderColor = "#2A323D"
+backgroundColor = "#F6F7FB"            # page: very light grey-blue, so white cards stand out
+secondaryBackgroundColor = "#FFFFFF"   # inputs, expanders, pop-up fields
+textColor = "#1B2A3D"                  # dark navy-grey text (softer than pure black)
+borderColor = "#E3E7EF"
 
 # Favourable / unfavourable colours used by Streamlit (e.g. metric arrows)
-greenColor = "#2EBD85"
-redColor = "#F6465D"
+greenColor = "#0F6E56"
+redColor = "#C0392B"
 
-codeFont = "monospace"
-baseFontSize = 14                      # slightly smaller = more on one screen
-baseRadius = "small"                   # sharper corners, more "terminal"
+baseFontSize = 14
+baseRadius = "large"                   # rounded corners, like cards in a modern app
 
-dataframeHeaderBackgroundColor = "#1B222C"
-showSidebarBorder = true
+dataframeHeaderBackgroundColor = "#F1F3F8"

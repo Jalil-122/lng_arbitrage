@@ -34,45 +34,80 @@ st.set_page_config(page_title="LNG Arb: Europe or Asia", page_icon="🚢", layou
 
 
 # ---------------------------------------------------------------------------
-# Look: dark trading terminal
+# Look: light "fintech" cards with a navy price strip (V4 design refresh)
 # ---------------------------------------------------------------------------
-# The colours come from .streamlit/config.toml. This small block of CSS (the
-# language web pages use for styling) adds what the theme can't do on its own.
+# The base colours come from .streamlit/config.toml. This block of CSS (the
+# language web pages use for styling) adds what the theme can't do on its own:
+# the fonts, white cards, the price strip and the verdict card.
 
-ACCENT = "#FFB000"       # amber (same as primaryColor in config.toml)
-MUTED_TEXT = "#8B95A3"   # grey for labels
-MONO = '"SF Mono", Menlo, Consolas, "Liberation Mono", monospace'
+NAVY = "#0C2340"          # titles, the price strip, main buttons
+MUTED_TEXT = "#5F6B7A"    # grey for labels
+GREEN_TEXT = "#085041"    # text on a green pill
+GREEN_BG = "#E1F5EE"      # green pill (a winning destination, an open passage)
+RED_TEXT = "#791F1F"      # text on a red pill
+RED_BG = "#FCEBEB"        # red pill (cancel, a closed passage)
+GREY_TEXT = "#3D4A5C"     # text on a grey pill
+GREY_BG = "#EEF1F6"       # grey pill (indifferent)
+SANS = '"Inter", -apple-system, "Helvetica Neue", Arial, sans-serif'
+MONO = '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace'
 
 TERMINAL_CSS = f"""
 <style>
+/* Two free Google fonts: Inter for text, JetBrains Mono for numbers */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+html, body, p, li, label, input, button, h1, h2, h3, td, th {{ font-family: {SANS}; }}
+/* ...but leave Streamlit's small icons (arrows etc.) in their own icon font */
+[data-testid="stIconMaterial"] {{ font-family: "Material Symbols Rounded" !important; }}
+
 /* Use more of the screen, less empty space at the top */
-.block-container {{ padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1400px; }}
+.block-container {{ padding-top: 2.6rem; padding-bottom: 2rem; max-width: 1300px; }}
 
-/* Big numbers (metrics) in an aligned monospace font, like a trading screen */
+/* Cards: every bordered box (st.container(border=True)) becomes a white rounded card */
+[data-testid="stVerticalBlockBorderWrapper"] {{
+    background: #FFFFFF; border: 1px solid #E3E7EF !important; border-radius: 14px;
+}}
+
+/* Number tiles (st.metric): a small white card each, numbers in the mono font */
+[data-testid="stMetric"] {{
+    background: #FFFFFF; border: 1px solid #E3E7EF; border-radius: 12px; padding: 12px 14px;
+}}
 [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {{
-    font-family: {MONO}; font-variant-numeric: tabular-nums;
+    font-family: {MONO}; font-variant-numeric: tabular-nums; color: {NAVY};
 }}
-[data-testid="stMetricLabel"] p {{
-    text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; color: {MUTED_TEXT};
-}}
+[data-testid="stMetricLabel"] p {{ font-size: .78rem; color: {MUTED_TEXT}; }}
 
-/* Section titles: small amber uppercase labels with a thin line underneath */
+/* Section titles: small grey uppercase labels */
 .section-label {{
-    text-transform: uppercase; letter-spacing: .12em; font-size: .78rem; font-weight: 700;
-    color: {ACCENT}; border-bottom: 1px solid #2A323D;
-    padding-bottom: .35rem; margin: 1.4rem 0 .7rem 0;
+    text-transform: uppercase; letter-spacing: .08em; font-size: .74rem; font-weight: 600;
+    color: {MUTED_TEXT}; margin: 1.3rem 0 .6rem 0;
 }}
 
-/* Header bar */
-.app-kicker {{ color: {ACCENT}; font-family: {MONO}; font-size: .8rem; letter-spacing: .15em; }}
-.app-title  {{ font-size: 1.9rem; font-weight: 700; margin: .1rem 0 .2rem 0; }}
-.app-sub    {{ color: {MUTED_TEXT}; font-size: .85rem; }}
+/* Header */
+.app-kicker {{ color: {MUTED_TEXT}; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }}
+.app-title  {{ font-size: 1.9rem; font-weight: 600; color: {NAVY}; margin: .1rem 0 .2rem 0; }}
+.app-sub    {{ color: {MUTED_TEXT}; font-size: .86rem; }}
 
-/* Verdict banner */
-.verdict {{
-    padding: 16px 22px; border-radius: 4px; border-left: 6px solid;
-    font-family: {MONO}; font-size: 1.45rem; font-weight: 700; letter-spacing: .02em;
+/* Price strip: the dark navy band at the top, like a trading-desk ticker */
+.price-strip {{
+    background: {NAVY}; color: #B5C3D6; border-radius: 10px; padding: 9px 16px;
+    font-family: {MONO}; font-size: .8rem; display: flex; flex-wrap: wrap; gap: 6px 22px;
+    margin-bottom: .9rem;
 }}
+.price-strip b {{ color: #FFFFFF; font-weight: 500; }}
+.price-strip .when {{ margin-left: auto; color: #8796AB; }}
+
+/* Small rounded tags (passages) and pills (the verdict's gain) */
+.tag {{ display: inline-block; font-size: .74rem; padding: 3px 11px; border-radius: 999px; margin: 0 6px 6px 0; }}
+.pill {{ display: inline-block; font-family: {MONO}; font-size: 1.05rem; padding: 7px 16px; border-radius: 999px; }}
+
+/* Verdict card: a plain-English sentence, with the gain in a coloured pill */
+.verdict-card {{
+    background: #FFFFFF; border: 1px solid #E3E7EF; border-radius: 14px; padding: 16px 20px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+}}
+.verdict-kicker {{ font-size: .8rem; color: {MUTED_TEXT}; }}
+.verdict-text {{ font-size: 1.6rem; font-weight: 600; color: {NAVY}; line-height: 1.25; }}
+.verdict-note {{ font-size: .75rem; color: {MUTED_TEXT}; text-align: right; margin-top: 4px; }}
 </style>
 """
 
@@ -83,7 +118,7 @@ def apply_terminal_style():
 
 
 def section_header(title, where=st):
-    """A small amber uppercase section title (where = st, st.sidebar, a column...)."""
+    """A small grey uppercase section title (where = st, a column, a container...)."""
     where.markdown(f'<div class="section-label">{title}</div>', unsafe_allow_html=True)
 
 
@@ -392,10 +427,11 @@ def indicative_evaluation(prices):
 # ---------------------------------------------------------------------------
 
 # Each verdict: (dark tinted background, bright border/text colour)
+# Each verdict: (pill background, pill text colour)
 BANNER_COLOURS = {
-    "lift": ("#0F2A1F", "#2EBD85"),         # green
-    "cancel": ("#2E1217", "#F6465D"),       # red
-    "indifferent": ("#1B222C", "#9AA4B2"),  # slate grey
+    "lift": (GREEN_BG, GREEN_TEXT),         # green: a destination wins
+    "cancel": (RED_BG, RED_TEXT),           # red: cancel the cargo
+    "indifferent": (GREY_BG, GREY_TEXT),    # grey: no clear winner
 }
 
 
@@ -435,15 +471,43 @@ def verdict_sentence(result, threshold):
     return text, BANNER_COLOURS["lift"]
 
 
-def show_banner(text, colours):
-    """Draw the verdict box: dark tinted background, bright coloured border and text.
+def verdict_card_parts(result, threshold):
+    """The verdict in plain English, for the verdict card.
 
-    colours: (background, accent) from BANNER_COLOURS.
+    Returns four things: (small line on top, sentence, pill text, pill colours).
+    Same decision as verdict_sentence, just worded for a visitor.
     """
-    background, accent = colours
+    port_key = result["port"]
+    kicker = f"{port_name(port_key)} cargo"
+    if result["decision"] is not None:             # US ports: LIFT or CANCEL
+        kicker += f" · {result['decision']}"
+
+    if result["decision"] == "CANCEL":
+        shortfall = result["fob_variable"] - result["best_netback"]
+        return (kicker, "Cancel the cargo: no destination covers 115% HH",
+                f"short by ${shortfall:.2f}", BANNER_COLOURS["cancel"])
+
+    if result["winner"] == "Indifferent":
+        return (kicker, "Either way: Europe and Asia pay about the same",
+                f"±${abs(result['spread']):.2f} / MMBtu", BANNER_COLOURS["indifferent"])
+
+    if result["winner"] == "Asia":
+        sentence = f"Send it to Asia, {route_label(port_key, result['asia_route'])}"
+    else:
+        sentence = f"Send it to Europe, {route_label(port_key, result['europe_route'])}"
+    return kicker, sentence, f"+${abs(result['spread']):.2f} / MMBtu", BANNER_COLOURS["lift"]
+
+
+def show_banner(result, threshold):
+    """Draw the verdict card: the sentence on the left, the gain in a coloured pill on the right."""
+    kicker, sentence, pill_text, (pill_bg, pill_fg) = verdict_card_parts(result, threshold)
     st.markdown(
-        f'<div class="verdict" style="background:{background}; border-color:{accent}; '
-        f'color:{accent};">{text}</div>',
+        f'''<div class="verdict-card">
+             <div><div class="verdict-kicker">{kicker}</div>
+                  <div class="verdict-text">{sentence}</div></div>
+             <div><span class="pill" style="background:{pill_bg}; color:{pill_fg};">{pill_text}</span>
+                  <div class="verdict-note">threshold ${threshold:.2f}</div></div>
+           </div>''',
         unsafe_allow_html=True,   # allows our small bit of HTML styling
     )
 
@@ -460,8 +524,7 @@ def show_hormuz_warning(result):
 
 def show_verdict(result, threshold):
     """Show the verdict banner, one line of key numbers underneath, and any Hormuz warning."""
-    text, colour = verdict_sentence(result, threshold)
-    show_banner(text, colour)
+    show_banner(result, threshold)
     port_key = result["port"]
     line = (f"{port_name(port_key)} · "
             f"Netback Europe {dollars(result['netback_europe'])} "
@@ -472,6 +535,85 @@ def show_verdict(result, threshold):
         line += f" · FOB 115% HH {dollars(result['fob_variable'])}"
     st.caption(line + " · all USD/MMBtu")
     show_hormuz_warning(result)
+
+
+# Status dots in the price strip (same meaning as the lights in the Live market table)
+STRIP_DOTS = {"fresh": "#2EBD85", "delayed": "#EF9F27", "stale": "#F09595"}
+
+
+def strip_item(name, quote, decimals, prefix=""):
+    """One price in the strip: a status dot, the name and the value (or n/a)."""
+    if quote.value is None:
+        value = "n/a"
+    else:
+        value = f"{prefix}{quote.value:.{decimals}f}"
+    dot = f'<span style="color:{STRIP_DOTS[quote.status]}">●</span>'
+    return f"<span>{dot} {name} <b>{value}</b></span>"
+
+
+def show_price_strip(prices):
+    """The navy band at the top: the main prices, their status dots, source and time."""
+    items = [
+        strip_item("HH", prices["henry_hub"], 3, "$"),
+        strip_item("TTF", prices["ttf"], 2, "€"),
+        strip_item("JKM fut", prices["jkm_settlement"], 3, "$"),
+        strip_item("EURUSD", prices["eurusd"], 4),
+    ]
+    # The latest time among the live prices (JKM is a daily settlement, so it's left out)
+    times = [quote.timestamp for quote in (prices["henry_hub"], prices["ttf"], prices["eurusd"])
+             if quote.timestamp is not None]
+    if times:
+        when = f"yfinance, delayed · {max(times).strftime('%a %d %b %H:%M UTC')}"
+    else:
+        when = "no live prices: type them in the pop-up"
+    st.markdown(f'<div class="price-strip">{"".join(items)}<span class="when">{when}</span></div>',
+                unsafe_allow_html=True)
+
+
+def passage_tags_html(passage_open):
+    """Small rounded tags: "Panama open" in green, "Suez avoided" in red, and so on."""
+    closed_words = {"panama": "closed", "suez": "avoided", "hormuz": "disrupted"}
+    short_names = {"panama": "Panama", "suez": "Suez", "hormuz": "Hormuz"}
+    tags = []
+    for key in config.PASSAGES:
+        if passage_open[key]:
+            text, background, colour = f"{short_names[key]} open", GREEN_BG, GREEN_TEXT
+        else:
+            text, background, colour = f"{short_names[key]} {closed_words[key]}", RED_BG, RED_TEXT
+        tags.append(f'<span class="tag" style="background:{background}; color:{colour};">{text}</span>')
+    return "".join(tags)
+
+
+def show_key_numbers(evaluation):
+    """Under the verdict: the passage tags and four number tiles."""
+    inputs = evaluation["inputs"]
+    result = evaluation["result"]
+    port_key = inputs["port_key"]
+    st.markdown(f'<div style="margin-top:.7rem">{passage_tags_html(inputs["passage_open"])}</div>',
+                unsafe_allow_html=True)
+
+    tile1, tile2, tile3, tile4 = st.columns(4)
+    tile1.metric(f"Netback Asia · {route_label(port_key, result['asia_route'])}",
+                 dollars(result["netback_asia"]))
+    tile2.metric(f"Netback Europe · {route_label(port_key, result['europe_route'])}",
+                 dollars(result["netback_europe"]))
+    breakeven_jkm = arb_calc.breakeven_jkm(inputs)
+    tile3.metric("Breakeven JKM", dollars(breakeven_jkm),
+                 delta=f"JKM {inputs['jkm'] - breakeven_jkm:+.2f} vs breakeven",
+                 delta_color="off", delta_arrow="off",
+                 help="Above this JKM, Asia beats Europe. The JKM used is the CME futures "
+                      "settlement; the Platts spot price can differ by $1-2.")
+    if is_us_port(port_key):
+        tile4.metric("Margin vs 115% HH", dollars(result["margin_variable"]),
+                     delta="lift, the fee is sunk" if result["decision"] == "LIFT" else "cancel",
+                     delta_color="off", delta_arrow="off",
+                     help="Best netback minus 115% of Henry Hub. Below zero means cancel.")
+    else:
+        breakeven_ttf = arb_calc.breakeven_ttf(inputs)
+        tile4.metric("Breakeven TTF", f"€{breakeven_ttf:.2f}",
+                     delta=f"TTF {inputs['ttf_eur_mwh'] - breakeven_ttf:+.2f} vs breakeven",
+                     delta_color="off", delta_arrow="off",
+                     help="Above this TTF (EUR/MWh), Europe beats Asia.")
 
 
 # ---------------------------------------------------------------------------
@@ -742,10 +884,14 @@ def passages_text(passage_open):
     return " · ".join(parts)
 
 
-def show_sidebar_summary(evaluation):
-    """Show what the trader did: when, at what prices, with what costs, and the answer."""
-    sb = st.sidebar
-    section_header("Your evaluation", sb)
+def show_evaluation_summary(evaluation):
+    """A fold-out panel: what the trader did, when, at what prices, with what costs, and the answer.
+
+    (Until the V4 design refresh this was the left sidebar.)
+    st.expander: a section that stays folded until it's clicked.
+    """
+    box = st.expander("Your evaluation · every price, cost and result used")
+    sb = box
 
     if evaluation is None:
         sb.info("No evaluation yet, and no market prices to show. "
@@ -768,6 +914,8 @@ def show_sidebar_summary(evaluation):
     text, _ = verdict_sentence(result, inputs["threshold"])
     sb.markdown(f"**{text}**")
 
+    left, middle, right = box.columns(3)   # three columns inside the panel
+    sb = left
     section_header("Cargo", sb)
     sb.markdown(markdown_table([
         ("Load port", port_option_text(port_key)),
@@ -787,6 +935,7 @@ def show_sidebar_summary(evaluation):
     ]
     sb.markdown(markdown_table(rows))
 
+    sb = middle
     section_header("Costs used", sb)
     detailed = costs["freight_mode"] == FREIGHT_DETAILED
     rows = [("Freight mode", "Detailed (charter model)" if detailed else "Simple ($/MMBtu)")]
@@ -815,6 +964,7 @@ def show_sidebar_summary(evaluation):
         rows.append(("Liquefaction fee", f"{inputs['liquefaction_fee']:.2f}"))
     sb.markdown(markdown_table(rows))
 
+    sb = right
     section_header("Results", sb)
     rows = [
         ("Netback Europe", f"{dollars(result['netback_europe'])} "
@@ -905,7 +1055,7 @@ def show_netbacks(result, inputs):
     port_key = inputs["port_key"]
     section_header(f"Netbacks at {port_name(port_key)}")
     st.caption(f"Netback = what the cargo is worth back at {port_name(port_key)}, per MMBtu "
-               "loaded, in USD/MMBtu. The prices and costs used are listed in the sidebar.")
+               "loaded, in USD/MMBtu. The prices and costs used are in 'Your evaluation' above.")
 
     # st.columns(2) splits the page into two side-by-side boxes
     europe_box, asia_box = st.columns(2)
@@ -1261,7 +1411,7 @@ def history_tab():
 # Header bar: title on the left, the two buttons on the right
 title_box, buttons_box = st.columns([3, 2], vertical_alignment="bottom")
 title_box.markdown(
-    '<div class="app-kicker">LNG ARB ▸ NINE LOAD PORTS ▸ FOB</div>'
+    '<div class="app-kicker">LNG arbitrage · nine load ports · FOB</div>'
     '<div class="app-title">Europe or Asia?</div>'
     '<div class="app-sub">Where should an LNG cargo go right now, and by how much? '
     'US, Qatar, Australia, Canada, Nigeria, Norway, Trinidad · '
@@ -1287,7 +1437,7 @@ evaluation = st.session_state.get("evaluation")
 if evaluation is None:
     evaluation = indicative_evaluation(prices)
 
-show_sidebar_summary(evaluation)
+show_price_strip(prices)
 
 # st.tabs splits the page into tabs; "with tab:" puts everything below it inside that tab
 evaluate_tab, history_tab_box = st.tabs(["Evaluate a cargo", "History"])
@@ -1297,28 +1447,35 @@ with evaluate_tab:
         st.warning("Market prices are unavailable. Click **Evaluate a cargo** and type them in.")
     else:
         if evaluation["indicative"]:
-            st.caption("INDICATIVE · live market prices with default costs. "
+            st.caption("Indicative · live market prices with default costs. "
                        "Click **Evaluate a cargo** to enter your own.")
         else:
-            st.caption(f"YOUR EVALUATION · {evaluation['time'].strftime('%H:%M UTC')} "
-                       "· details in the sidebar")
+            st.caption(f"Your evaluation · {evaluation['time'].strftime('%H:%M UTC')}")
         show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
+        show_key_numbers(evaluation)
+        show_evaluation_summary(evaluation)
 
-        section_header(f"Routes from {port_name(evaluation['inputs']['port_key'])}")
-        # config={"displayModeBar": False} hides Plotly's toolbar, for a cleaner look
-        st.plotly_chart(charts.route_map(evaluation["result"]),
-                        width="stretch", config={"displayModeBar": False})
-        st.caption("Amber: the winning route · grey: other open routes · dashed: closed. "
-                   "Diamonds = passages: green open, red closed (Panama, Suez, Hormuz), "
-                   "grey always open (Cape of Good Hope, Cape Horn, Malacca). "
-                   "Hover a route or a diamond for details. Sea lanes are simplified.")
+        # st.container(border=True) draws a box; the CSS above turns it into a white card
+        with st.container(border=True):
+            section_header(f"Routes from {port_name(evaluation['inputs']['port_key'])}")
+            # config: hide Plotly's toolbar, and don't zoom the map when scrolling the page
+            st.plotly_chart(charts.route_map(evaluation["result"]), width="stretch",
+                            config={"displayModeBar": False, "scrollZoom": False})
+            st.caption("Green: the winning route · grey: other open routes · dashed: closed. "
+                       "Diamonds = passages: green open, red closed (Panama, Suez, Hormuz), "
+                       "grey always open (Cape of Good Hope, Cape Horn, Malacca). "
+                       "Hover a route or a diamond for details. Sea lanes are simplified.")
 
-        show_netbacks(evaluation["result"], evaluation["inputs"])
-        show_margins(evaluation["result"])
-        show_sensitivity(evaluation)
+        with st.container(border=True):
+            show_netbacks(evaluation["result"], evaluation["inputs"])
+        with st.container(border=True):
+            show_margins(evaluation["result"])
+        with st.container(border=True):
+            show_sensitivity(evaluation)
 
-    st.divider()   # a thin horizontal line
-    live_market()
+    with st.container(border=True):
+        live_market()
 
 with history_tab_box:
-    history_tab()
+    with st.container(border=True):   # one white card for the whole History tab
+        history_tab()

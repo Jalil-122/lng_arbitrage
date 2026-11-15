@@ -504,3 +504,11 @@ All checked on 15 Nov 2026 (77 tests; 144 port × passage × freight-mode combin
 5. Non-US ports show a destination-only verdict with no Cancel, FOB cost or margin.
 6. The map shows all ports and passage statuses, with the winner highlighted.
 7. Distances come from a cited source; everything works offline; `market_data.py` is still the only file talking to a data source.
+
+### 14.8 Design refresh (agreed after V4)
+
+Same content and behaviour; new look only. Replaces the "dark trading terminal" design of 12.4.
+- **Light theme** (`.streamlit/config.toml`): light grey page, white rounded cards, navy accent, Inter for text and JetBrains Mono for numbers.
+- **Top of the page**: a navy **price strip** (HH, TTF, JKM futures, EURUSD, each with its status dot, plus source and time); a **verdict card** with the decision in plain English ("Send it to Asia, via Panama") and the gain in a coloured pill; the **passage tags**; four **number tiles** (netback Asia, netback Europe, breakeven JKM, margin vs 115% HH, or breakeven TTF for non-US ports).
+- The **left sidebar is removed**: "Your evaluation" becomes a fold-out panel under the tiles, in three columns.
+- Every section below (map, netbacks, margins, sensitivity, live market, History) sits in a white card. The winning route on the map is green; scrolling the page no longer zooms the map.
