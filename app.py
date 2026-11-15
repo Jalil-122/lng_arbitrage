@@ -621,8 +621,10 @@ def evaluate_dialog(prices):
         new_costs["cargo_mmbtu"] = c2.number_input(
             "Cargo loaded (MMBtu)", min_value=1, step=100_000, value=int(costs["cargo_mmbtu"]))
         new_costs["boil_off_pct_per_day"] = c3.number_input(
-            "Boil-off (% per laden day)", min_value=0.0, step=0.01, format="%.2f",
-            value=float(costs["boil_off_pct_per_day"]))
+            "Boil-off (% per laden day)", min_value=0.0, max_value=0.5, step=0.01, format="%.2f",
+            value=float(costs["boil_off_pct_per_day"]),
+            help="Modern carriers lose about 0.08-0.15% a day. Capped at 0.5%: more would "
+                 "evaporate most of a long-voyage cargo.")
         speed = c4.number_input(
             "Ship speed (knots)", min_value=5.0, max_value=25.0, step=0.5, format="%.1f",
             value=float(costs["ship_speed"]),
@@ -670,11 +672,20 @@ def evaluate_dialog(prices):
 
     if st.button("Evaluate", type="primary", width="stretch"):
         gas = {"henry_hub": henry_hub, "ttf_eur_mwh": ttf, "eurusd": eurusd, "jkm": jkm}
-        sources = {name: source_of(gas[name], market[name]) for name in gas}
-        st.session_state["costs"] = new_costs
-        st.session_state["evaluation"] = make_evaluation(gas, new_costs, sources,
-                                                         indicative=False, price_names=names)
-        st.session_state["show_result_in_popup"] = True
+        # A price of 0 means "not typed yet" (e.g. offline): calculating with it would be
+        # meaningless, and EURUSD = 0 would even divide by zero. So ask for it instead.
+        box_names = {"henry_hub": names["henry_hub"], "ttf_eur_mwh": names["ttf"],
+                     "eurusd": "EURUSD", "jkm": "JKM"}
+        zero_prices = [box_names[name] for name in needed + ["jkm"] if not gas[name]]
+        if zero_prices:
+            st.error(f"Type a price above zero for: {', '.join(zero_prices)}.")
+            st.session_state["show_result_in_popup"] = False
+        else:
+            sources = {name: source_of(gas[name], market[name]) for name in gas}
+            st.session_state["costs"] = new_costs
+            st.session_state["evaluation"] = make_evaluation(gas, new_costs, sources,
+                                                             indicative=False, price_names=names)
+            st.session_state["show_result_in_popup"] = True
 
     # Show the answer inside the pop-up. (We use session_state, not the button,
     # so the answer stays visible when Close is clicked.)

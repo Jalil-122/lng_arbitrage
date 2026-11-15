@@ -17,7 +17,7 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 | **V1** ✅ done | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, "Evaluate a cargo" pop-up, auto refresh, a status light for each price, and a refresh log |
 | **V2** ✅ done (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
 | **V3** ✅ done (section 13) | Historical arb analysis (free monthly history from FRED + Yahoo: arb over time, win rates, seasonality) and M+1 delivery pricing |
-| **V4** in progress (section 14) | Nine real load ports (US and non-US), real sea distances, and the Suez, Panama, Cape and Hormuz passages with open/closed switches |
+| **V4** ✅ done (section 14) | Nine real load ports (US and non-US), real sea distances, and the Suez, Panama, Cape and Hormuz passages with open/closed switches |
 
 Sections 1–11 describe V1. Sections 12, 13 and 14 describe V2, V3 and V4; each overrides the earlier ones where they differ.
 
@@ -494,6 +494,8 @@ tests/         + route choice, closed passages, days from distance, non-US verdi
 6. Check every item in 14.7, refresh the README and screenshots; then publish.
 
 ### 14.7 Done criteria for V4
+
+All checked on 15 Nov 2026 (77 tests; 144 port × passage × freight-mode combinations run; offline run in the browser).
 
 1. Each of the nine ports can be evaluated, and its routes and days follow the port.
 2. With the same inputs, Sabine Pass with Suez avoided gives exactly the V3 results (all earlier tests pass).
