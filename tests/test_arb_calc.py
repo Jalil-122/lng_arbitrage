@@ -9,6 +9,7 @@ pytest.approx(x) means "equal to x, allowing for tiny rounding differences",
 because computers store decimals like 0.1 slightly imprecisely.
 """
 
+import pandas as pd
 import pytest
 
 import arb_calc
@@ -273,3 +274,80 @@ def test_decision_grid_shows_cancel():
     # HH at 10: FOB variable 11.50 is above every netback in the grid -> Cancel everywhere
     outcomes, _ = arb_calc.decision_grid(dict(BASE_INPUTS, henry_hub=10.0), [11.0, 12.0], [1.6])
     assert outcomes == [["Cancel", "Cancel"]]
+
+
+# ---------------------------------------------------------------------------
+# History (V3): four made-up months, one per outcome, checked by hand
+# ---------------------------------------------------------------------------
+# Costs = BASE_INPUTS (Simple mode, no boil-off): freight NWE 0.90, Panama 1.60,
+# Cape 2.10, regas Europe 0.45, Asia 0.35, threshold 0.10. HH = 3.00 every month,
+# so FOB variable = 1.15 x 3.00 = 3.45.
+#
+#            Europe  JKM    Netback EU          Netback Asia (Panama)   Spread   Outcome
+# Jan-25     10.00  12.00   10-0.45-0.90= 8.65  12-0.35-1.60=10.05      +1.40    Asia
+# Feb-25     12.00  12.00   12-0.45-0.90=10.65  10.05                   -0.60    Europe
+# Jan-26     10.00  10.65   8.65                10.65-1.95= 8.70        +0.05    Indifferent
+# Feb-26      2.00   2.00   2-1.35= 0.65        2-1.95= 0.05            -0.60    Cancel (0.65 < 3.45)
+# Dec-24 has a Europe price only, so it must be left out.
+
+HISTORY_MONTHS = pd.to_datetime(["2025-01-01", "2025-02-01", "2026-01-01", "2026-02-01"])
+EUROPE_HISTORY = pd.Series([9.99, 10.00, 12.00, 10.00, 2.00],
+                           index=pd.to_datetime(["2024-12-01"]).append(HISTORY_MONTHS))
+HH_HISTORY = pd.Series([3.00, 3.00, 3.00, 3.00], index=HISTORY_MONTHS)
+JKM_HISTORY = pd.Series([12.00, 12.00, 10.65, 2.00], index=HISTORY_MONTHS)
+
+
+def history_table():
+    """The monthly arb table for the four made-up months."""
+    return arb_calc.historical_arb(EUROPE_HISTORY, HH_HISTORY, JKM_HISTORY, BASE_INPUTS)
+
+
+def test_ttf_usd_skips_the_conversion():
+    # Passing a price already in USD/MMBtu gives the same answer as converting
+    converted = arb_calc.calculate_arb(**BASE_INPUTS)
+    direct = arb_calc.calculate_arb(**dict(BASE_INPUTS, ttf_usd=converted["ttf_usd"]))
+    assert direct["netback_europe"] == pytest.approx(converted["netback_europe"])
+
+
+def test_historical_arb_by_hand():
+    table = history_table()
+
+    assert len(table) == 4                                   # Dec-24 is left out
+    assert list(table["outcome"]) == ["Asia", "Europe", "Indifferent", "Cancel"]
+    assert list(table["netback_europe"]) == pytest.approx([8.65, 10.65, 8.65, 0.65])
+    assert list(table["netback_asia"]) == pytest.approx([10.05, 10.05, 8.70, 0.05])
+    assert list(table["spread"]) == pytest.approx([1.40, -0.60, 0.05, -0.60])
+    assert list(table["asia_route"]) == ["Panama"] * 4
+
+
+def test_win_rates_add_up_to_100():
+    rates = arb_calc.win_rates(history_table())
+    # By hand: one month of each outcome out of four = 25% each
+    assert rates == {"Europe": 25.0, "Asia": 25.0, "Indifferent": 25.0, "Cancel": 25.0}
+    assert sum(rates.values()) == pytest.approx(100)
+
+
+def test_win_rates_by_year():
+    by_year = arb_calc.win_rates_by_year(history_table())
+    # 2025: Asia and Europe one month each ; 2026: Indifferent and Cancel one month each
+    assert list(by_year["year"]) == [2025, 2026]
+    assert list(by_year.iloc[0][arb_calc.OUTCOMES]) == [50.0, 50.0, 0.0, 0.0]
+    assert list(by_year.iloc[1][arb_calc.OUTCOMES]) == [0.0, 0.0, 50.0, 50.0]
+
+
+def test_seasonality_by_hand():
+    season = arb_calc.seasonality(history_table())
+    # January: (1.40 + 0.05) / 2 = 0.725 ; February: (-0.60 + -0.60) / 2 = -0.60
+    assert list(season["month_name"]) == ["Jan", "Feb"]
+    assert list(season["average_spread"]) == pytest.approx([0.725, -0.60])
+    assert list(season["months"]) == [2, 2]
+
+
+def test_last_years_keeps_the_latest_months():
+    table = history_table()
+    assert len(arb_calc.last_years(table, None)) == 4      # "All"
+    assert len(arb_calc.last_years(table, 1)) == 4         # fewer than 12 months: all kept
+    long_table = pd.DataFrame({"month": pd.date_range("2020-01-01", periods=30, freq="MS")})
+    last_year = arb_calc.last_years(long_table, 1)
+    assert len(last_year) == 12
+    assert last_year["month"].iloc[0] == pd.Timestamp("2021-07-01")   # the 12 most recent

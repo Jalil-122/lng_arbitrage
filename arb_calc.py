@@ -9,6 +9,8 @@ That makes it easy to test: same inputs always give the same answer.
 All prices are in USD/MMBtu, except TTF before conversion (EUR/MWh).
 """
 
+import pandas as pd
+
 import config
 
 
@@ -175,6 +177,7 @@ def calculate_arb(
     boil_off_nwe=0.0,
     boil_off_panama=0.0,
     boil_off_cape=0.0,
+    ttf_usd=None,
 ):
     """Run the whole arb calculation and return every result in a dictionary.
 
@@ -183,9 +186,12 @@ def calculate_arb(
 
     boil_off_*: share of the cargo lost per route (Detailed freight mode).
     Left at 0 (Simple mode), the results are exactly the V1 ones.
+    ttf_usd: only for prices already in USD/MMBtu (the FRED history). If given,
+    ttf_eur_mwh and eurusd are ignored and no conversion is done.
     """
     # 1. Put TTF in the same unit as everything else (USD/MMBtu)
-    ttf_usd = ttf_to_usd_mmbtu(ttf_eur_mwh, eurusd)
+    if ttf_usd is None:
+        ttf_usd = ttf_to_usd_mmbtu(ttf_eur_mwh, eurusd)
 
     # 2. Cost of the cargo at Sabine Pass
     fob_variable = fob_variable_cost(henry_hub)
@@ -339,3 +345,97 @@ def decision_grid(inputs, jkm_values, freight_values):
         outcomes.append(outcome_row)
         spreads.append(spread_row)
     return outcomes, spreads
+
+
+# ---------------------------------------------------------------------------
+# History (V3): the arb month by month, win rates, seasonality
+# ---------------------------------------------------------------------------
+
+def historical_arb(europe, henry_hub, jkm, inputs):
+    """Re-run today's arb calculation for every month in the history.
+
+    europe, henry_hub, jkm: monthly prices in USD/MMBtu (pandas Series, one
+        value per month, labelled by the first day of the month).
+    inputs: the current evaluation's inputs. Only its COSTS are used
+        (freight, boil-off, regas, fee, Panama, threshold); the gas prices
+        are replaced by each month's prices.
+
+    Only months where all three prices exist are kept.
+    Returns a table (pandas DataFrame) with one row per month.
+    """
+    # The months the three series have in common, oldest first
+    months = europe.index.intersection(henry_hub.index).intersection(jkm.index).sort_values()
+
+    rows = []
+    for month in months:
+        month_inputs = dict(inputs)
+        month_inputs["henry_hub"] = float(henry_hub[month])
+        month_inputs["jkm"] = float(jkm[month])
+        month_inputs["ttf_usd"] = float(europe[month])   # already USD/MMBtu: no conversion
+        result = calculate_arb(**month_inputs)
+
+        rows.append({
+            "month": month,
+            "henry_hub": month_inputs["henry_hub"],
+            "europe": month_inputs["ttf_usd"],
+            "jkm": month_inputs["jkm"],
+            "netback_europe": result["netback_europe"],
+            "netback_asia": result["netback_asia"],
+            "asia_route": result["asia_route"],
+            "spread": result["spread"],              # Asia - Europe
+            "outcome": outcome(result),              # Europe / Asia / Indifferent / Cancel
+            "margin_variable": result["margin_variable"],
+        })
+    return pd.DataFrame(rows)
+
+
+def last_years(table, years):
+    """Keep only the last `years` years of a monthly table (years=None keeps everything).
+
+    1 year = the last 12 months in the table, 3 years = the last 36, and so on.
+    """
+    if years is None:
+        return table
+    return table.tail(years * 12)
+
+
+def win_rates(table):
+    """Share of months (in %) for each outcome. The four shares add up to 100.
+
+    An outcome that never happened gets 0.
+    """
+    total = len(table)
+    rates = {}
+    for name in OUTCOMES:
+        months_won = (table["outcome"] == name).sum()   # count the rows with this outcome
+        rates[name] = 100 * months_won / total if total else 0.0
+    return rates
+
+
+def win_rates_by_year(table):
+    """Win rates (in %) for each calendar year: one row per year, one column per outcome."""
+    years = table["month"].dt.year          # .dt.year takes the year out of each date
+    rows = []
+    for year in sorted(years.unique()):
+        year_rates = win_rates(table[years == year])
+        rows.append({"year": int(year), **year_rates})
+    return pd.DataFrame(rows, columns=["year"] + OUTCOMES)
+
+
+def seasonality(table):
+    """Average spread (Asia - Europe) for each calendar month, Jan to Dec.
+
+    Only calendar months present in the table are returned.
+    Columns: month_number (1-12), month_name ("Jan"), average_spread, months (how many).
+    """
+    month_numbers = table["month"].dt.month
+    rows = []
+    for number in sorted(month_numbers.unique()):
+        spreads = table.loc[month_numbers == number, "spread"]
+        rows.append({
+            "month_number": int(number),
+            "month_name": pd.Timestamp(2000, int(number), 1).strftime("%b"),
+            "average_spread": spreads.mean(),
+            "months": len(spreads),
+        })
+    return pd.DataFrame(rows)
