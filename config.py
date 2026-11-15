@@ -161,3 +161,153 @@ ROUTE_LABEL_POINTS = {"nwe": (43.0, -42.0), "panama": (14.0, -118.0), "cape": (-
 SENSITIVITY_RANGE_PCT = 0.25   # charts show the price from -25% to +25% around today's level
 SENSITIVITY_POINTS = 61        # how many points each line is drawn with
 HEATMAP_POINTS = 41            # cells per axis in the decision heatmap (41 x 41)
+
+
+# ---------------------------------------------------------------------------
+# 9. Load ports, routes and passages (V4)
+# ---------------------------------------------------------------------------
+# DISTANCES (nautical miles, one way) were computed with "searoute" 1.6, a free
+# sea-routing tool built on Eurostat's MARNET shipping-lane network, in Nov 2026.
+# Check against published figures for US Gulf -> Japan (Riviera Maritime citing
+# Sea-Distances.org, and S&P Global): Panama 9,306 vs 9,209 nm, Suez 14,624 vs
+# 14,521 nm, Cape 15,825 vs 15,689 nm, i.e. within about 1%.
+#
+# Each port has a list of ROUTES. A route goes to one destination ("nwe" =
+# North-West Europe, priced on TTF; "asia" = North Asia, priced on JKM) and
+# lists the PASSAGES it uses. If any of those passages is closed, the route
+# can't be used, and the app picks the best route that is still open.
+
+DEFAULT_SHIP_SPEED_KNOTS = 16   # laden speed of an LNG carrier; 1 knot = 1 nautical mile per hour
+                                # one-way days = distance / (speed x 24 hours)
+
+DEFAULT_SUEZ_TOLL = 450_000     # USD per Suez transit. EDITABLE PLACEHOLDER: the Suez Canal
+                                # Authority publishes no simple LNG figure, and its surcharges
+                                # changed in July 2026 (circular 19/2026). Check before use.
+# DEFAULT_PANAMA_TOLL (section 3b) stays 500,000: the 2024 Panama tariff gives about
+# 620,000 laden (300,000 fixed + 1.85 USD/m3 x 174,000 m3) and less in ballast,
+# before any slot-auction premium.
+
+# The passages that can be switched open/closed in the pop-up.
+# Passages not listed here (Cape of Good Hope, Cape Horn, Gibraltar, Malacca)
+# are always open.
+PASSAGES = {
+    "panama": {
+        "name": "Panama Canal",
+        "default_open": True,    # open but congested: slots are auctioned in 2026
+        "point": (9.10, -79.70),
+    },
+    "suez": {
+        "name": "Suez Canal + Red Sea",
+        "default_open": False,   # mostly avoided since the 2023-24 Houthi attacks
+        "point": (30.0, 32.55),
+    },
+    "hormuz": {
+        "name": "Strait of Hormuz",
+        "default_open": False,   # largely blocked since the March 2026 Iran war
+        "point": (26.55, 56.25),
+    },
+}
+
+# Other passages, only drawn on the map (never closed in the app).
+OTHER_PASSAGE_POINTS = {
+    "Cape of Good Hope": (-34.8, 19.5),
+    "Cape Horn": (-56.5, -67.3),
+    "Strait of Malacca": (2.5, 101.3),
+}
+
+DEFAULT_LOAD_PORT = "sabine_pass"
+
+# "us_hh_linked" = True for US ports: the cargo costs 115% Henry Hub + a
+# liquefaction fee, and the buyer can cancel it (lift/cancel verdict).
+# Non-US cargoes mostly sell on oil-linked long-term contracts with no cancel
+# option, so they only get the destination verdict (Europe or Asia).
+LOAD_PORTS = {
+    "sabine_pass": {
+        "name": "Sabine Pass", "country": "USA (Louisiana)", "us_hh_linked": True,
+        "point": (29.73, -93.87),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 4979,  "passages": []},
+            "asia_panama": {"destination": "asia", "label": "via Panama",    "distance_nm": 9306,  "passages": ["panama"]},
+            "asia_suez":   {"destination": "asia", "label": "via Suez",      "distance_nm": 14624, "passages": ["suez"]},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 15825, "passages": []},
+        },
+    },
+    "corpus_christi": {
+        "name": "Corpus Christi", "country": "USA (Texas)", "us_hh_linked": True,
+        "point": (27.88, -97.25),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 5110,  "passages": []},
+            "asia_panama": {"destination": "asia", "label": "via Panama",    "distance_nm": 9377,  "passages": ["panama"]},
+            "asia_suez":   {"destination": "asia", "label": "via Suez",      "distance_nm": 14755, "passages": ["suez"]},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 15936, "passages": []},
+        },
+    },
+    "cove_point": {
+        "name": "Cove Point", "country": "USA (Maryland)", "us_hh_linked": True,
+        "point": (38.40, -76.39),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 3559,  "passages": []},
+            "asia_panama": {"destination": "asia", "label": "via Panama",    "distance_nm": 9705,  "passages": ["panama"]},
+            "asia_suez":   {"destination": "asia", "label": "via Suez",      "distance_nm": 13355, "passages": ["suez"]},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 15276, "passages": []},
+        },
+    },
+    "point_fortin": {
+        "name": "Point Fortin", "country": "Trinidad and Tobago", "us_hh_linked": False,
+        "point": (10.18, -61.70),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 4097,  "passages": []},
+            "asia_panama": {"destination": "asia", "label": "via Panama",    "distance_nm": 9023,  "passages": ["panama"]},
+            "asia_suez":   {"destination": "asia", "label": "via Suez",      "distance_nm": 13391, "passages": ["suez"]},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 13721, "passages": []},
+        },
+    },
+    "bonny": {
+        "name": "Bonny Island", "country": "Nigeria", "us_hh_linked": False,
+        "point": (4.40, 7.15),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 4450,  "passages": []},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 10912, "passages": []},
+        },
+    },
+    "hammerfest": {
+        "name": "Hammerfest", "country": "Norway", "us_hh_linked": False,
+        "point": (70.69, 23.60),
+        "routes": {
+            "nwe":         {"destination": "nwe",  "label": "direct",        "distance_nm": 1376,  "passages": []},
+            "asia_suez":   {"destination": "asia", "label": "via Suez",      "distance_nm": 12552, "passages": ["suez"]},
+            "asia_panama": {"destination": "asia", "label": "via Panama",    "distance_nm": 13238, "passages": ["panama"]},
+            "asia_cape":   {"destination": "asia", "label": "via the Cape",  "distance_nm": 15832, "passages": []},
+        },
+    },
+    "ras_laffan": {
+        "name": "Ras Laffan", "country": "Qatar", "us_hh_linked": False,
+        "point": (25.92, 51.58),
+        # Every Ras Laffan route crosses Hormuz: there is no way around it.
+        # The app does not remove these routes when Hormuz is disrupted; it warns instead.
+        "routes": {
+            "nwe_suez":    {"destination": "nwe",  "label": "via Suez",      "distance_nm": 6421,  "passages": ["hormuz", "suez"]},
+            "nwe_cape":    {"destination": "nwe",  "label": "via the Cape",  "distance_nm": 11204, "passages": ["hormuz"]},
+            "asia":        {"destination": "asia", "label": "via Malacca",   "distance_nm": 6587,  "passages": ["hormuz"]},
+        },
+    },
+    "gladstone": {
+        "name": "Gladstone", "country": "Australia (Queensland)", "us_hh_linked": False,
+        "point": (-23.77, 151.23),
+        "routes": {
+            "nwe_suez":    {"destination": "nwe",  "label": "via Suez",      "distance_nm": 11778, "passages": ["suez"]},
+            "nwe_panama":  {"destination": "nwe",  "label": "via Panama",    "distance_nm": 12885, "passages": ["panama"]},
+            "nwe_cape":    {"destination": "nwe",  "label": "via the Cape",  "distance_nm": 13387, "passages": []},
+            "asia":        {"destination": "asia", "label": "direct",        "distance_nm": 3771,  "passages": []},
+        },
+    },
+    "kitimat": {
+        "name": "Kitimat (LNG Canada)", "country": "Canada (British Columbia)", "us_hh_linked": False,
+        "point": (54.00, -128.70),
+        "routes": {
+            "nwe_panama":  {"destination": "nwe",  "label": "via Panama",    "distance_nm": 9342,  "passages": ["panama"]},
+            "nwe_horn":    {"destination": "nwe",  "label": "via Cape Horn", "distance_nm": 14804, "passages": []},
+            "asia":        {"destination": "asia", "label": "direct",        "distance_nm": 4150,  "passages": []},
+        },
+    },
+}

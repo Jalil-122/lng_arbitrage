@@ -17,8 +17,9 @@ The tool is built like a trading desk tool. Every price passes through **one dat
 | **V1** ✅ done | Calculator with live delayed prices (HH, TTF, EURUSD), JKM daily settlement as an editable prefill, "Evaluate a cargo" pop-up, auto refresh, a status light for each price, and a refresh log |
 | **V2** ✅ done (section 12) | Freight & boil-off model, dark trading-terminal design, route map, sensitivity charts (breakeven lines, decision heatmap) |
 | **V3** ✅ done (section 13) | Historical arb analysis (free monthly history from FRED + Yahoo: arb over time, win rates, seasonality) and M+1 delivery pricing |
+| **V4** in progress (section 14) | Nine real load ports (US and non-US), real sea distances, and the Suez, Panama, Cape and Hormuz passages with open/closed switches |
 
-Sections 1–11 describe V1. Section 12 describes V2 and section 13 describes V3; each overrides the earlier ones where they differ.
+Sections 1–11 describe V1. Sections 12, 13 and 14 describe V2, V3 and V4; each overrides the earlier ones where they differ.
 
 ## 3. V1 decisions (agreed)
 
@@ -421,3 +422,81 @@ tests/           + month-code logic, history arb, win rates, seasonality (offlin
 6. The period selector changes the charts, the win rates and the seasonality.
 7. If FRED or Yahoo history fails, the History tab says so and the Evaluate tab still works.
 8. `market_data.py` is still the only file that talks to a data source; all tests pass.
+
+---
+
+## 14. V4 specification
+
+### 14.1 Why (market context, Nov 2026)
+
+The real LNG routes in 2026 are not a textbook case:
+- **Strait of Hormuz**: largely blocked since the March 2026 Iran war. Ras Laffan (Qatar) is damaged and running at reduced capacity. QatarEnergy keeps extending force majeure month by month.
+- **Suez / Red Sea (Bab el-Mandeb)**: traffic is recovering but still well below normal, with Houthi attacks resuming in September 2026. LNG transits are rare.
+- **Panama**: US Gulf → Asia LNG transits more than doubled in the canal's fiscal 2026. The route is cheaper than the Cape, but slots are auctioned and congested, so most **spot** US cargoes to Asia still go round the Cape.
+- **Exporters (2025)**: the US (~26% of world LNG), Qatar and Australia together make up about 63%.
+
+### 14.2 V4 decisions (agreed)
+
+| Topic | Decision |
+|---|---|
+| Load ports | **Nine**. US: **Sabine Pass**, **Corpus Christi**, **Cove Point**. Non-US: **Ras Laffan** (Qatar), **Gladstone** (Australia), **Kitimat** (LNG Canada), **Bonny Island** (Nigeria), **Hammerfest** (Norway), **Point Fortin** (Trinidad) |
+| Excluded | **Russia** (sanctions) and the **Northern Sea Route** (summer only, ice-class ships) |
+| Destinations | Unchanged: **North-West Europe** (Gate, Rotterdam; priced on TTF) and **North Asia** (Tokyo Bay; priced on JKM) |
+| Routes | Each port has its own list of realistic routes to each destination, with a sea distance in nautical miles and the passages it uses (table in `config.py`, with its source) |
+| Passages | **Panama** (open / closed), **Suez + Red Sea** (open / avoided, **default avoided**), **Cape of Good Hope** (always open), **Strait of Hormuz** (open / disrupted, **default disrupted**) |
+| Route choice | For each destination, the app keeps the **open** route with the **best netback** (generalises V2's Panama vs Cape choice) |
+| Hormuz | No route from Ras Laffan avoids it. When it is *disrupted*, the evaluation still runs but shows a clear **warning** that the cargo may not be able to sail |
+| Voyage days | Prefilled as `distance ÷ (speed × 24)`, rounded to whole days, from an editable **ship speed** (default **16 knots**). The days stay editable |
+| Return leg | Ballast returns the same way it came (as in V2): tolls are paid twice |
+| Cost of the cargo | **US ports**: unchanged (115% HH + liquefaction fee), so the **lift / cancel** verdict stays. **Non-US ports**: **destination only** ("→ ASIA, wins by $x"). These cargoes mostly sell on oil-linked long-term contracts with no cancel option, so no FOB cost, margin or Cancel is shown |
+| History tab, log | Unchanged: they stay **Sabine Pass** (US) based, and say so |
+
+### 14.3 Formulas
+
+Unchanged from sections 6 and 12.3, per route:
+
+```
+one_way_days  = distance_nm ÷ (speed_knots × 24)          (prefill, rounded)
+canal_cost    = 2 × (tolls of every canal on the route)   (laden + ballast)
+freight       = (charter_rate × 2 × one_way_days + canal_cost) ÷ cargo_size
+netback       = (hub_price − regas) × (1 − boil_off) − freight
+best route    = the open route with the highest netback, per destination
+```
+
+Simple mode: one freight box per available route, prefilled from the Detailed model with the default inputs.
+
+### 14.4 Screens (changes from V3)
+
+- **Pop-up**: a **Load port** picker at the top. A **Passages** section with the Panama, Suez/Red Sea and Hormuz switches. The routes, day boxes and freight boxes follow the chosen port. For a non-US port, the Henry Hub box and the cancel inputs are hidden.
+- **Verdict**: US ports as before. Non-US ports: "→ EUROPE / → ASIA, wins by $x (via …)" or "INDIFFERENT". The Hormuz warning, when relevant, sits right under the verdict.
+- **Map**: every port is a marker, with the chosen port highlighted and its routes drawn. The winner is highlighted and closed routes are dashed. Each passage is marked and coloured by status.
+- **Sidebar summary**: shows the load port and the passage statuses.
+
+### 14.5 File changes (V4)
+
+```
+config.py      + ports, routes (distance, passages), passage defaults, ship speed, Suez toll
+arb_calc.py    + voyage days from distance, route freight with any canal, best open route per destination
+charts.py      + all ports and passages on the map
+app.py         + port picker, passage switches, destination-only verdict, Hormuz warning
+tests/         + route choice, closed passages, days from distance, non-US verdict
+```
+
+### 14.6 V4 build order
+
+1. This section (SPEC).
+2. `config.py`: ports, routes with researched sea distances (source cited), passages, speed, Suez toll.
+3. `arb_calc.py`: route freight and best open route per destination, with tests.
+4. Pop-up: port picker, passage switches, destination-only verdict, Hormuz warning.
+5. Map: all ports and passages.
+6. Check every item in 14.7, refresh the README and screenshots; then publish.
+
+### 14.7 Done criteria for V4
+
+1. Each of the nine ports can be evaluated, and its routes and days follow the port.
+2. With the same inputs, Sabine Pass with Suez avoided gives exactly the V3 results (all earlier tests pass).
+3. Closing a passage removes every route that uses it; the best open route is chosen (tests).
+4. Ras Laffan shows the Hormuz warning while Hormuz is set to *disrupted*.
+5. Non-US ports show a destination-only verdict with no Cancel, FOB cost or margin.
+6. The map shows all ports and passage statuses, with the winner highlighted.
+7. Distances come from a cited source; everything works offline; `market_data.py` is still the only file talking to a data source.
