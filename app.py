@@ -100,12 +100,15 @@ apply_terminal_style()
 # is sure to find the old prices expired and fetch new ones.
 @st.cache_data(ttl=config.REFRESH_SECONDS - 10)
 def load_market_prices():
-    """Fetch HH, TTF, EURUSD and the JKM settlement (cached for 5 minutes).
+    """Fetch HH, TTF, EURUSD, the JKM settlement and the contract months (cached 5 minutes).
 
     Returns two things: (the prices, the time we fetched them).
     The fetch time lets us log exactly one row per real refresh.
     """
-    return market_data.get_market_prices(), datetime.now(timezone.utc)
+    # {**a, **b} merges two dictionaries into one: the front-month prices
+    # plus the contract months used for M+1 pricing (HH loading month, TTF M+1)
+    prices = {**market_data.get_market_prices(), **market_data.get_contract_prices()}
+    return prices, datetime.now(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +122,15 @@ def load_market_prices():
 FREIGHT_SIMPLE = "Simple ($/MMBtu)"
 FREIGHT_DETAILED = "Detailed (charter model)"
 
+# Delivery pricing (V3): which futures months price the cargo
+DELIVERY_FRONT = "Front month"     # HH and TTF front month (V1/V2 behaviour)
+DELIVERY_M1 = "M+1 delivery"       # HH = loading month, TTF = the month the cargo arrives
+
 
 def default_costs():
     """The cost assumptions from config.py, used until the trader enters their own."""
     return {
+        "delivery_pricing": DELIVERY_FRONT,
         "freight_mode": FREIGHT_SIMPLE,
         # Simple mode: freight typed directly in $/MMBtu
         "freight_nwe": config.DEFAULT_FREIGHT_NWE,
@@ -194,28 +202,65 @@ def arb_inputs(gas, costs):
     return inputs, build_up
 
 
-def market_gas_prices(prices):
+def use_contract(prices, delivery_pricing, contract_key):
+    """True if M+1 pricing is on AND that contract month has a price.
+
+    If the contract has no data, we fall back to the front month (SPEC 13.4).
+    """
+    return delivery_pricing == DELIVERY_M1 and prices[contract_key].value is not None
+
+
+def market_gas_prices(prices, delivery_pricing=DELIVERY_FRONT):
     """The market's gas prices as plain numbers (None where a price is missing).
 
+    Front month: HH and TTF front month.
+    M+1 delivery: HH for the loading month and TTF for the delivery month
+    (each falls back to its front month if the contract has no price).
     JKM falls back to the config default when Yahoo has no settlement.
     """
     jkm = prices["jkm_settlement"].value
     if jkm is None:
         jkm = config.DEFAULT_JKM
+
+    henry_hub = prices["henry_hub"].value
+    if use_contract(prices, delivery_pricing, "henry_hub_front"):
+        henry_hub = prices["henry_hub_front"].value
+
+    ttf = prices["ttf"].value
+    if use_contract(prices, delivery_pricing, "ttf_m1"):
+        ttf = prices["ttf_m1"].value
+
     return {
-        "henry_hub": prices["henry_hub"].value,
-        "ttf_eur_mwh": prices["ttf"].value,
+        "henry_hub": henry_hub,
+        "ttf_eur_mwh": ttf,
         "eurusd": prices["eurusd"].value,
         "jkm": jkm,
     }
 
 
-def make_evaluation(gas, costs, sources, indicative):
+def gas_price_names(prices, delivery_pricing):
+    """Names for the HH and TTF prices used, e.g. "TTF Jan-27" in M+1 mode.
+
+    Shown on the pop-up boxes and in the sidebar, so the trader always
+    knows which contract month priced the cargo.
+    """
+    names = {"henry_hub": "Henry Hub", "ttf": "TTF"}   # front month: plain names
+    if use_contract(prices, delivery_pricing, "henry_hub_front"):
+        names["henry_hub"] = prices["henry_hub_front"].name    # e.g. "Henry Hub Dec-26"
+    if use_contract(prices, delivery_pricing, "ttf_m1"):
+        names["ttf"] = prices["ttf_m1"].name                   # e.g. "TTF Jan-27"
+    elif delivery_pricing == DELIVERY_M1:
+        names["ttf"] = "TTF front (M+1 unavailable)"
+    return names
+
+
+def make_evaluation(gas, costs, sources, indicative, price_names):
     """Run the arb calculation and pack everything the screens need.
 
-    gas: the four gas prices used; costs: freight mode, freight/voyage inputs, fees
+    gas: the four gas prices used; costs: delivery pricing, freight mode, freight/voyage inputs, fees
     sources: for each gas price, "market" or "your input"
     indicative: True if this is the automatic case (no evaluation by the trader yet)
+    price_names: names of the HH and TTF prices used (e.g. "TTF Jan-27")
     """
     inputs, build_up = arb_inputs(gas, costs)
     result = arb_calc.calculate_arb(**inputs)
@@ -227,6 +272,7 @@ def make_evaluation(gas, costs, sources, indicative):
         "result": result,
         "sources": sources,
         "indicative": indicative,
+        "price_names": price_names,
     }
 
 
@@ -235,11 +281,13 @@ def indicative_evaluation(prices):
 
     Returns None if HH, TTF or EURUSD is missing (nothing to calculate with).
     """
-    gas = market_gas_prices(prices)
+    costs = current_costs()
+    gas = market_gas_prices(prices, costs["delivery_pricing"])
     if None in gas.values():
         return None
     sources = {name: "market" for name in gas}
-    return make_evaluation(gas, current_costs(), sources, indicative=True)
+    names = gas_price_names(prices, costs["delivery_pricing"])
+    return make_evaluation(gas, costs, sources, indicative=True, price_names=names)
 
 
 # ---------------------------------------------------------------------------
@@ -320,24 +368,39 @@ def source_of(typed, market):
 @st.dialog("🚢 Evaluate a cargo", width="large", on_dismiss="rerun")
 def evaluate_dialog(prices):
     """Pop-up: enter prices and costs, click Evaluate, see the answer at once."""
-    market = market_gas_prices(prices)
     costs = current_costs()
 
     st.caption("Gas prices are prefilled from the market (yfinance, delayed; JKM is "
                "yesterday's settlement). Change any number, then click **Evaluate**. "
                "All prices in USD/MMBtu unless stated.")
 
+    # Every change in the pop-up re-runs only the pop-up (it's cheap: nothing is
+    # calculated until Evaluate). That lets each switch show the right boxes at once.
+    section_header("1 · Gas prices")
+    delivery_pricing = st.radio(
+        "Delivery pricing", [DELIVERY_FRONT, DELIVERY_M1], horizontal=True,
+        index=[DELIVERY_FRONT, DELIVERY_M1].index(costs["delivery_pricing"]),
+        help="Front month: HH and TTF front month. M+1 delivery: HH for the loading "
+             "month and TTF for the month the cargo arrives in Europe. JKM stays the "
+             "daily settlement (Yahoo has no JKM contract months).")
+
+    # The market prices for the chosen pricing, and their names (e.g. "TTF Jan-27")
+    market = market_gas_prices(prices, delivery_pricing)
+    names = gas_price_names(prices, delivery_pricing)
+
     missing = [name for name in ("henry_hub", "ttf_eur_mwh", "eurusd") if market[name] is None]
     if missing:
         st.warning("Some market prices are unavailable (no internet?). Type them in yourself.")
+    if delivery_pricing == DELIVERY_M1 and prices["ttf_m1"].value is None:
+        st.warning(f"No price for the {prices['ttf_m1'].name} contract: "
+                   "TTF is prefilled with the front month instead.")
 
-    # Every change in the pop-up re-runs only the pop-up (it's cheap: nothing is
-    # calculated until Evaluate). That lets the freight switch show the right boxes at once.
-    section_header("1 · Gas prices")
+    # When the label changes (e.g. "TTF" -> "TTF Jan-27"), Streamlit treats it as a
+    # new box, so switching the pricing refills the box with the right market price.
     c1, c2, c3, c4 = st.columns(4)
-    henry_hub = c1.number_input("Henry Hub", min_value=0.0, step=0.05, format="%.3f",
+    henry_hub = c1.number_input(names["henry_hub"], min_value=0.0, step=0.05, format="%.3f",
                                 value=market["henry_hub"] or 0.0)
-    ttf = c2.number_input("TTF (EUR/MWh)", min_value=0.0, step=0.50, format="%.2f",
+    ttf = c2.number_input(f"{names['ttf']} (EUR/MWh)", min_value=0.0, step=0.50, format="%.2f",
                           value=market["ttf_eur_mwh"] or 0.0)
     eurusd = c3.number_input("EURUSD", min_value=0.0, step=0.005, format="%.4f",
                              value=market["eurusd"] or 0.0)
@@ -351,7 +414,7 @@ def evaluate_dialog(prices):
 
     # Start from the last costs; the boxes shown below overwrite the ones they cover.
     # (The other mode's values are kept, so switching back remembers them.)
-    new_costs = dict(costs, freight_mode=freight_mode)
+    new_costs = dict(costs, freight_mode=freight_mode, delivery_pricing=delivery_pricing)
 
     if freight_mode == FREIGHT_SIMPLE:
         c1, c2, c3 = st.columns(3)
@@ -407,7 +470,8 @@ def evaluate_dialog(prices):
         gas = {"henry_hub": henry_hub, "ttf_eur_mwh": ttf, "eurusd": eurusd, "jkm": jkm}
         sources = {name: source_of(gas[name], market[name]) for name in gas}
         st.session_state["costs"] = new_costs
-        st.session_state["evaluation"] = make_evaluation(gas, new_costs, sources, indicative=False)
+        st.session_state["evaluation"] = make_evaluation(gas, new_costs, sources,
+                                                         indicative=False, price_names=names)
         st.session_state["show_result_in_popup"] = True
 
     # Show the answer inside the pop-up. (We use session_state, not the button,
@@ -477,9 +541,11 @@ def show_sidebar_summary(evaluation):
     sb.markdown(f"**{text}**")
 
     section_header("Prices used", sb)
+    names = evaluation["price_names"]
     sb.markdown(markdown_table([
-        ("Henry Hub", f"{inputs['henry_hub']:.3f} · {sources['henry_hub']}"),
-        ("TTF (EUR/MWh)", f"{inputs['ttf_eur_mwh']:.2f} · {sources['ttf_eur_mwh']}"),
+        ("Delivery pricing", evaluation["costs"]["delivery_pricing"]),
+        (names["henry_hub"], f"{inputs['henry_hub']:.3f} · {sources['henry_hub']}"),
+        (f"{names['ttf']} (EUR/MWh)", f"{inputs['ttf_eur_mwh']:.2f} · {sources['ttf_eur_mwh']}"),
         ("EURUSD", f"{inputs['eurusd']:.4f} · {sources['eurusd']}"),
         ("TTF ($/MMBtu)", f"{result['ttf_usd']:.3f} · converted"),
         ("JKM", f"{inputs['jkm']:.3f} · {sources['jkm']}"),
@@ -814,12 +880,15 @@ def live_market():
         ttf_usd = arb_calc.ttf_to_usd_mmbtu(ttf.value, eurusd.value)
         rows.append((market_data.derived_quote("TTF", ttf_usd, "USD/MMBtu", [ttf, eurusd]), 3))
     rows += [(eurusd, 4), (jkm_settlement, 3)]
+    # The contract months used for M+1 pricing (e.g. Henry Hub Dec-26, TTF Jan-27)
+    rows += [(prices["henry_hub_front"], 3), (prices["ttf_m1"], 2)]
     show_price_panel(rows)
 
     if live_ok:
         # Log the MARKET arb: live prices with the latest cost assumptions
-        # (same freight mode as the last evaluation: Simple, or Detailed with boil-off)
-        market_inputs, _ = arb_inputs(market_gas_prices(prices), current_costs())
+        # (same freight mode as the last evaluation: Simple, or Detailed with boil-off).
+        # The log always uses FRONT-month prices, so its history stays comparable.
+        market_inputs, _ = arb_inputs(market_gas_prices(prices, DELIVERY_FRONT), current_costs())
         market_result = arb_calc.calculate_arb(**market_inputs)
         log_if_new_prices(fetched_at, prices, market_inputs, market_result)
     else:
@@ -840,7 +909,7 @@ title_box.markdown(
     '<div class="app-kicker">LNG ARB ▸ SABINE PASS FOB</div>'
     '<div class="app-title">Europe or Asia?</div>'
     '<div class="app-sub">Where should a US LNG cargo go right now, and by how much? '
-    'Front-month prices · yfinance data delayed, indicative only.</div>',
+    'Front-month or M+1 prices · yfinance data delayed, indicative only.</div>',
     unsafe_allow_html=True,
 )
 # Buttons first (we only act on them once prices are loaded below)
