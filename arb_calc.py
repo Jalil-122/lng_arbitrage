@@ -633,6 +633,10 @@ def calculate_port_arb(
         "port": port_key,
         "ttf_usd": ttf_usd,
         "route_netbacks": route_netbacks,
+        "passage_open": dict(passage_open),
+        # True/False per route: can it be used with today's passages? (for the map and tables)
+        "route_open": {key: route_is_open(route["passages"], passage_open)
+                       for key, route in port["routes"].items()},
         "route_boil_off_loss": route_boil_off_loss,
         "netback_europe": netback_europe,
         "europe_route": europe_route,

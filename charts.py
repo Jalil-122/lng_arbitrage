@@ -14,115 +14,170 @@ import plotly.graph_objects as go
 import config
 
 # Colours (same palette as the dark terminal theme in .streamlit/config.toml)
-ACCENT = "#FFB000"        # amber: the winning route
+ACCENT = "#FFB000"        # amber: the winning route, the chosen port
 DIM = "#5B6676"           # grey: the other routes
 CLOSED = "#3A4250"        # dark grey: a closed route
+OPEN_GREEN = "#2EBD85"    # a passage that is open
+CLOSED_RED = "#F6465D"    # a passage that is closed / avoided / disrupted
 LAND = "#1B222C"
 BORDERS = "#2A323D"
 MONO = "SF Mono, Menlo, Consolas, monospace"
-
-ROUTE_NAMES = {"nwe": "NWE", "panama": "Asia via Panama", "cape": "Asia via Cape"}
 
 
 def highlighted_routes(result):
     """Which routes to highlight on the map, from the verdict.
 
-    Europe wins      -> {"nwe"}
-    Asia wins        -> {"panama"} or {"cape"} (the route chosen)
-    Indifferent      -> both: NWE and the best Asia route
+    Europe wins      -> the best Europe route, e.g. {"nwe"}
+    Asia wins        -> the best Asia route, e.g. {"asia_panama"}
+    Indifferent      -> both
     CANCEL           -> none (the cargo doesn't sail)
     """
     if result["decision"] == "CANCEL":
         return set()
-    asia_route = result["asia_route"].lower()   # "Panama" -> "panama"
     if result["winner"] == "Europe":
-        return {"nwe"}
+        return {result["europe_route"]}
     if result["winner"] == "Asia":
-        return {asia_route}
-    return {"nwe", asia_route}   # Indifferent
+        return {result["asia_route"]}
+    return {result["europe_route"], result["asia_route"]}   # Indifferent
 
 
-def route_netbacks(result):
-    """The netback of each route, by route key."""
-    return {
-        "nwe": result["netback_europe"],
-        "panama": result["netback_asia_panama"],
-        "cape": result["netback_asia_cape"],
-    }
+def halfway_point(points):
+    """The point of a line closest to halfway along it (where its label goes).
 
-
-def route_map(result, inputs):
-    """World map: the three routes from Sabine Pass, labelled with their netbacks.
-
-    The winning route is thick amber, the others thin grey,
-    and a closed Panama Canal is drawn dashed.
+    Measured roughly in map degrees, which is enough to place a label. A jump of
+    more than 180 degrees of longitude means the line crosses the date line, so
+    the short way round is used.
     """
+    # The length of each piece of the line (Pythagoras on degrees)
+    lengths = []
+    for (lat1, lon1), (lat2, lon2) in zip(points[:-1], points[1:]):   # each point and the next
+        lat_step = abs(lat2 - lat1)
+        lon_step = abs(lon2 - lon1)
+        if lon_step > 180:
+            lon_step = 360 - lon_step
+        lengths.append((lat_step ** 2 + lon_step ** 2) ** 0.5)
+
+    # Walk along the line until half the total length is covered
+    travelled = 0
+    for index, length in enumerate(lengths):
+        travelled += length
+        if travelled >= sum(lengths) / 2:
+            return points[index + 1]
+    return points[-1]
+
+
+def add_points(figure, points, names, hover, colour, size, symbol="circle", text_position=None):
+    """Draw a group of points (ports or passages). With text_position, also write their names."""
+    figure.add_trace(go.Scattergeo(
+        lat=[point[0] for point in points],
+        lon=[point[1] for point in points],
+        mode="markers+text" if text_position else "markers",
+        text=names,
+        textposition=text_position,
+        hovertext=hover,
+        hoverinfo="text",
+        marker={"size": size, "color": colour, "symbol": symbol,
+                "line": {"width": 1, "color": "#0B0E13"}},
+        textfont={"color": "#D9DEE5", "size": 11, "family": MONO},
+    ))
+
+
+def route_map(result):
+    """World map: the chosen port's routes, labelled with their netbacks, plus every
+    port and passage.
+
+    The winning route is thick amber, the other open routes thin grey, and closed
+    routes dashed. Passages are green when open, red when closed (hover for the name).
+    """
+    port_key = result["port"]
+    port = config.LOAD_PORTS[port_key]
     winners = highlighted_routes(result)
-    netbacks = route_netbacks(result)
     figure = go.Figure()
 
-    # Draw the non-winning routes first, so the winner is drawn on top
-    drawing_order = sorted(ROUTE_NAMES, key=lambda route: route in winners)
-
-    for route in drawing_order:
-        closed = route == "panama" and not inputs["panama_available"]
-        if route in winners:
+    # 1. The chosen port's routes. Non-winners first, so the winner is drawn on top.
+    #    sorted(..., key=...) puts False (not a winner) before True (a winner).
+    drawing_order = sorted(port["routes"], key=lambda route_key: route_key in winners)
+    for route_key in drawing_order:
+        route = port["routes"][route_key]
+        is_open = result["route_open"][route_key]
+        if route_key in winners:
             colour, width, dash = ACCENT, 4, "solid"
-        elif closed:
+        elif not is_open:
             colour, width, dash = CLOSED, 2, "dash"
         else:
             colour, width, dash = DIM, 2, "solid"
 
-        points = config.ROUTE_POINTS[route]
+        points = config.ROUTE_LINES[port_key][route_key]
+        destination = "Europe" if route["destination"] == "nwe" else "Asia"
+        name = f"{destination} {route['label']}"
+        if is_open:
+            label = f"{name}<br>${result['route_netbacks'][route_key]:.2f}"
+        else:
+            label = f"{name}<br>CLOSED"
         figure.add_trace(go.Scattergeo(
             lat=[point[0] for point in points],
             lon=[point[1] for point in points],
             mode="lines",
             line={"width": width, "color": colour, "dash": dash},
-            hoverinfo="skip",
+            hovertext=f"{label.replace('<br>', ' · ')} · {route['distance_nm']:,} nm",
+            hoverinfo="text",
         ))
 
-        # The label: route name and netback (or CLOSED)
-        name = ROUTE_NAMES[route]
-        label = f"{name}<br>CLOSED" if closed else f"{name}<br>${netbacks[route]:.2f}"
-        label_lat, label_lon = config.ROUTE_LABEL_POINTS[route]
+        # The label sits halfway along the route's line
+        middle = halfway_point(points)
         figure.add_trace(go.Scattergeo(
-            lat=[label_lat], lon=[label_lon], mode="text", text=[label],
-            textfont={"color": colour if route in winners else "#9AA4B2",
-                      "size": 13, "family": MONO},
+            lat=[middle[0]], lon=[middle[1]], mode="text", text=[label],
+            textfont={"color": colour if route_key in winners else "#9AA4B2",
+                      "size": 11, "family": MONO},
             hoverinfo="skip",
         ))
 
-    # The three ports
-    ports = [("Sabine Pass", config.PORT_SABINE_PASS, "bottom center"),
-             ("Gate", config.PORT_GATE, "top center"),
-             ("Tokyo Bay", config.PORT_TOKYO_BAY, "top center")]
-    figure.add_trace(go.Scattergeo(
-        lat=[port[1][0] for port in ports],
-        lon=[port[1][1] for port in ports],
-        mode="markers+text",
-        text=[port[0] for port in ports],
-        textposition=[port[2] for port in ports],
-        marker={"size": 8, "color": ACCENT, "line": {"width": 1, "color": "#0B0E13"}},
-        textfont={"color": "#D9DEE5", "size": 11, "family": MONO},
-        hoverinfo="skip",
-    ))
+    # 2. Passages: switchable ones coloured by status, the always-open ones in grey
+    switchable = list(config.PASSAGES.values())
+    passage_open = [result["passage_open"][key] for key in config.PASSAGES]
+    add_points(figure,
+               [passage["point"] for passage in switchable],
+               names=None,
+               hover=[f"{passage['name']}: {'open' if is_open else 'CLOSED'}"
+                      for passage, is_open in zip(switchable, passage_open)],
+               colour=[OPEN_GREEN if is_open else CLOSED_RED for is_open in passage_open],
+               size=11, symbol="diamond")
+    add_points(figure,
+               list(config.OTHER_PASSAGE_POINTS.values()),
+               names=None,
+               hover=[f"{name}: always open" for name in config.OTHER_PASSAGE_POINTS],
+               colour=DIM, size=8, symbol="diamond")
 
-    # The map itself: dark land, no frame, cropped to the useful latitudes
+    # 3. The other load ports (small grey), then the destinations and the chosen port (amber)
+    others = [key for key in config.LOAD_PORTS if key != port_key]
+    add_points(figure,
+               [config.LOAD_PORTS[key]["point"] for key in others],
+               names=None,
+               hover=[config.LOAD_PORTS[key]["name"] for key in others],
+               colour=DIM, size=6)
+    add_points(figure,
+               [port["point"], config.PORT_GATE, config.PORT_TOKYO_BAY],
+               names=[port["name"], "Gate", "Tokyo Bay"],
+               hover=[f"{port['name']} (load port)", "Gate, Rotterdam (TTF)", "Tokyo Bay (JKM)"],
+               colour=ACCENT, size=9,
+               text_position=["top center", "top center", "top center"])
+
+    # The map itself: dark land, no frame, cropped from Cape Horn to Hammerfest
     figure.update_geos(
         projection_type="natural earth",
         showland=True, landcolor=LAND,
         showocean=True, oceancolor="#0B0E13",
         showcountries=True, countrycolor=BORDERS,
         coastlinecolor=BORDERS, showlakes=False, showframe=False,
-        lataxis_range=[-50, 70],
+        lataxis_range=[-60, 75],
         bgcolor="rgba(0,0,0,0)",
     )
     figure.update_layout(
-        height=420,
+        height=460,
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
+        hoverlabel={"font": {"family": MONO}},
     )
     return figure
 

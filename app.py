@@ -1294,7 +1294,13 @@ with evaluate_tab:
         show_verdict(evaluation["result"], evaluation["inputs"]["threshold"])
 
         section_header(f"Routes from {port_name(evaluation['inputs']['port_key'])}")
-        st.info("The route map is being rebuilt for all nine ports (V4 step 5).")
+        # config={"displayModeBar": False} hides Plotly's toolbar, for a cleaner look
+        st.plotly_chart(charts.route_map(evaluation["result"]),
+                        width="stretch", config={"displayModeBar": False})
+        st.caption("Amber: the winning route · grey: other open routes · dashed: closed. "
+                   "Diamonds = passages: green open, red closed (Panama, Suez, Hormuz), "
+                   "grey always open (Cape of Good Hope, Cape Horn, Malacca). "
+                   "Hover a route or a diamond for details. Sea lanes are simplified.")
 
         show_netbacks(evaluation["result"], evaluation["inputs"])
         show_margins(evaluation["result"])
