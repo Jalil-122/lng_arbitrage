@@ -29,9 +29,11 @@ For US cargoes it also answers the offtaker's question behind it: **lift the car
    Freight is entered in one of two modes:
    - **Simple:** USD/MMBtu per route.
    - **Detailed:** a charter model (charter rate × round-trip days from distance ÷ ship speed, Panama and Suez tolls, cargo size, boil-off), with a freight build-up table.
-5. **Gives the verdict straight away:**
-   - US ports: `LIFT → ASIA, wins by $1.44/MMBtu (via Panama)`, `LIFT → EUROPE`, `INDIFFERENT` or `CANCEL`.
-   - Other ports: `→ ASIA, wins by $2.72/MMBtu (via Malacca)`.
+5. **Gives the verdict straight away**, in plain English with the gain next to it:
+   - US ports: "Send it to Asia, via Panama · +$1.44/MMBtu" (a LIFT), "Send it to Europe", "Either way" (indifferent) or "Cancel the cargo".
+   - Other ports: "Send it to Asia, via Malacca · +$2.72/MMBtu".
+
+   Under it: a price strip (HH, TTF, JKM, EURUSD with status dots), the passage tags and four key numbers (both netbacks, the breakeven JKM, and the margin or the breakeven TTF).
 6. **Draws the routes** on a world map along real sea lanes:
    - each route is labelled with its netback, and the winner is highlighted;
    - closed routes are dashed;
@@ -40,7 +42,7 @@ For US cargoes it also answers the offtaker's question behind it: **lift the car
 8. **Stress-tests the decision**:
    - **breakeven charts** give the exact JKM and TTF levels where the cargo flips destination;
    - a **decision map** colours every JKM × freight combination by outcome.
-9. **Records what was done**: the sidebar keeps a summary of the evaluation, with every price labelled "market" or "your input".
+9. **Records what was done**: a fold-out "Your evaluation" panel keeps a summary of the evaluation, with every price labelled "market" or "your input".
 10. **Logs the live arb** for a Sabine Pass cargo: every 5 minutes it re-prices the market and appends one row to a CSV log.
 11. **Shows 12 years of arb history** for a Sabine Pass cargo, in a **History** tab: every month since mid-2014 priced with the same formulas, with
     - the **arb over time**, one bar per month coloured by winner (the 2022 energy crisis, when Europe outbid Asia by up to $17/MMBtu, stands out);
@@ -170,13 +172,13 @@ pytest
 
 ```
 lng_arbitrage/
-├── app.py                 # Screens: Evaluate and History tabs, pop-up, sidebar summary, live market, log
+├── app.py                 # Screens: price strip, verdict card, Evaluate and History tabs, pop-up, evaluation summary, live market, log
 ├── market_data.py         # THE data module: prices, contract months, monthly history (Quote and History objects)
 ├── arb_calc.py            # Pure formulas: netbacks, freight & boil-off, best open route per port, breakevens, history stats
 ├── charts.py              # Plotly map and charts: routes and passages, breakevens, heatmap, arb over time, win rates, seasonality
 ├── arb_log.py             # CSV refresh log: one row per price refresh
 ├── config.py              # Tickers, FRED series, load ports, routes and distances, passages, defaults, map lines
-├── .streamlit/config.toml # Dark trading-terminal theme
+├── .streamlit/config.toml # Parchment theme (warm page, paper cards, charcoal accent)
 ├── tests/                 # 77 pytest tests
 ├── docs/                  # Screenshots
 ├── SPEC.md                # Full specification (V1 to V4: scope, formulas, screens, done criteria)
@@ -192,7 +194,7 @@ lng_arbitrage/
 | **V1** | Calculator with market data, cargo evaluation pop-up, status lights, auto refresh and refresh log | ✅ Done |
 | **V2** | Freight & boil-off model, dark terminal design, route map, breakeven charts, decision heatmap | ✅ Done |
 | **V3** | Historical arb since 2014 (FRED + Yahoo): arb over time, win rates, seasonality; M+1 delivery pricing | ✅ Done |
-| **V4** | Nine real load ports, real sea distances, Panama / Suez / Cape / Hormuz passages, destination-only verdict for non-US cargoes | ✅ Done |
+| **V4** | Nine real load ports, real sea distances, Panama / Suez / Cape / Hormuz passages, destination-only verdict for non-US cargoes; design refresh (parchment cards, price strip, plain-English verdict) | ✅ Done |
 | Next | Publish online on Streamlit Community Cloud | Planned |
 
 ---
