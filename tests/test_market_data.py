@@ -186,6 +186,76 @@ def test_contract_prices_offline_are_red_not_errors(monkeypatch):
     assert quotes["ttf_m1"].status == "stale"
 
 
+# ---------------------------------------------------------------------------
+# Monthly history (V3): tested offline with fake downloads
+# ---------------------------------------------------------------------------
+
+def fake_fred_csv(series_id):
+    """A fake FRED download: three months, one of them missing (".")."""
+    return pd.DataFrame({
+        "observation_date": ["2026-07-01", "2026-08-01", "2026-09-01"],
+        series_id: ["11.50", ".", "12.25"],
+    })
+
+
+def test_fred_history_reads_months_and_skips_missing(monkeypatch):
+    monkeypatch.setattr(market_data, "download_fred_csv", fake_fred_csv)
+
+    history = market_data.fetch_fred_monthly("Europe gas", "PNGASEUUSDM")
+
+    assert history.status == "ok"
+    assert history.source == "FRED (IMF, monthly)"
+    assert list(history.values) == [11.50, 12.25]          # August (".") is skipped
+    assert history.values.index[-1] == pd.Timestamp("2026-09-01")
+
+
+def broken_download(series_id):
+    raise ConnectionError("no internet")
+
+
+def test_fred_failure_never_crashes(monkeypatch):
+    monkeypatch.setattr(market_data, "download_fred_csv", broken_download)
+
+    history = market_data.fetch_fred_monthly("Henry Hub", "PNGASUSUSDM")
+
+    assert history.status == "failed"
+    assert history.values.empty
+    assert "no internet" in history.error
+
+
+class DailyJkmHistoryTicker:
+    """A fake Yahoo JKM: 2 days in September, 3 in October, 1 in November."""
+    def __init__(self, ticker):
+        pass
+
+    def history(self, **kwargs):
+        dates = pd.to_datetime(["2026-09-29", "2026-09-30",
+                                "2026-10-01", "2026-10-02", "2026-10-30",
+                                "2026-11-02"]).tz_localize("America/New_York")
+        return pd.DataFrame({"Close": [10.0, 12.0, 20.0, 21.0, 25.0, 30.0]}, index=dates)
+
+
+def test_jkm_monthly_average_by_hand(monkeypatch):
+    monkeypatch.setattr(market_data.yf, "Ticker", DailyJkmHistoryTicker)
+
+    history = market_data.fetch_jkm_monthly(today=datetime(2026, 11, 15))
+
+    # By hand: September (10 + 12) / 2 = 11.0 ; October (20 + 21 + 25) / 3 = 22.0
+    # November is not finished on 15 Nov, so it is left out
+    assert history.status == "ok"
+    assert list(history.values.index) == [pd.Timestamp("2026-09-01"), pd.Timestamp("2026-10-01")]
+    assert list(history.values) == [11.0, 22.0]
+
+
+def test_jkm_history_failure_never_crashes(monkeypatch):
+    monkeypatch.setattr(market_data.yf, "Ticker", BrokenTicker)
+
+    history = market_data.fetch_jkm_monthly()
+
+    assert history.status == "failed"
+    assert history.values.empty
+
+
 def test_boundaries():
     # Exactly 20 min old is no longer fresh; exactly 60 min old is stale
     assert market_data.quote_status(NOW - timedelta(minutes=20), now=NOW) == "delayed"

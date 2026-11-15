@@ -12,9 +12,11 @@ Nothing else in the project would change.
 Try it from the terminal:   python market_data.py
 """
 
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import pandas as pd
 import yfinance as yf
 
 import config
@@ -205,6 +207,102 @@ def get_contract_prices(today=None):
 
 
 # ---------------------------------------------------------------------------
+# Monthly history (V3): FRED + Yahoo JKM
+# ---------------------------------------------------------------------------
+
+@dataclass
+class History:
+    """A monthly price history: the monthly version of a Quote.
+
+    values is a pandas Series: one price per month, labelled by the first day
+    of the month (e.g. 2026-09-01 -> the September 2026 average).
+    """
+    name: str                # e.g. "Europe gas"
+    unit: str                # "USD/MMBtu"
+    source: str              # e.g. "FRED (IMF, monthly)"
+    fetched_at: datetime     # when we downloaded it (UTC)
+    status: str              # "ok" or "failed"
+    values: pd.Series        # the monthly prices (empty if the download failed)
+    error: str = ""          # what went wrong, if it failed
+
+
+def failed_history(name, source, error):
+    """An empty History marked "failed", so a broken download never crashes the app."""
+    print(f"[market_data] could not load {name} history: {error}")
+    return History(name=name, unit="USD/MMBtu", source=source,
+                   fetched_at=datetime.now(timezone.utc), status="failed",
+                   values=pd.Series(dtype=float), error=str(error))
+
+
+def download_fred_csv(series_id):
+    """Download one FRED series as a table (columns: observation_date, <series_id>).
+
+    Kept as its own small function so the tests can replace it with fake data.
+    """
+    url = config.FRED_CSV_URL + series_id
+    # "with" opens the connection and closes it automatically afterwards
+    with urllib.request.urlopen(url, timeout=config.HISTORY_TIMEOUT_SECONDS) as response:
+        return pd.read_csv(response)
+
+
+def fetch_fred_monthly(name, series_id):
+    """Fetch one monthly FRED series as a History. Never crashes."""
+    try:
+        table = download_fred_csv(series_id)
+        dates = pd.to_datetime(table["observation_date"])
+        # FRED marks missing months with "." : errors="coerce" turns those into
+        # "not a number", and dropna() removes them
+        prices = pd.to_numeric(table[series_id], errors="coerce")
+        values = pd.Series(prices.values, index=dates).dropna()
+        if values.empty:
+            raise ValueError(f"no data in FRED series {series_id}")
+        return History(name=name, unit="USD/MMBtu", source=config.SOURCE_FRED,
+                       fetched_at=datetime.now(timezone.utc), status="ok", values=values)
+    except Exception as error:
+        return failed_history(name, config.SOURCE_FRED, error)
+
+
+def fetch_jkm_monthly(today=None):
+    """JKM history: Yahoo's daily settlements averaged by month. Never crashes.
+
+    The current month is left out: it isn't finished, so its average isn't final.
+    today: normally left empty; tests pass a fixed date.
+    """
+    name, source = "JKM", config.SOURCE_YFINANCE_MONTHLY
+    if today is None:
+        today = datetime.now(timezone.utc)
+    try:
+        bars = yf.Ticker(config.TICKER_JKM).history(period="max", interval="1d")
+        if bars.empty:
+            raise ValueError(f"no data returned for {config.TICKER_JKM}")
+
+        daily = bars["Close"]
+        daily.index = daily.index.tz_localize(None)   # drop the time zone: we only need the date
+        # resample("MS") groups the days by month ("Month Start"), mean() averages each group
+        monthly = daily.resample("MS").mean().dropna()
+
+        this_month = pd.Timestamp(today.year, today.month, 1)
+        monthly = monthly[monthly.index < this_month]   # finished months only
+        return History(name=name, unit="USD/MMBtu", source=source,
+                       fetched_at=datetime.now(timezone.utc), status="ok", values=monthly)
+    except Exception as error:
+        return failed_history(name, source, error)
+
+
+def get_history():
+    """Fetch the three monthly histories the History tab needs.
+
+    Returns a dictionary of History tickets:
+        {"europe": Europe gas (FRED), "henry_hub": Henry Hub (FRED), "jkm": JKM (Yahoo)}
+    """
+    return {
+        "europe": fetch_fred_monthly("Europe gas (TTF-based)", config.FRED_SERIES_EUROPE),
+        "henry_hub": fetch_fred_monthly("Henry Hub", config.FRED_SERIES_HENRY_HUB),
+        "jkm": fetch_jkm_monthly(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Prices that don't come from yfinance
 # ---------------------------------------------------------------------------
 
@@ -272,3 +370,12 @@ if __name__ == "__main__":
         value = f"{quote.value:.4f}" if quote.value is not None else "no price"
         print(f"{lights[quote.status]} {quote.name:<16} {value:>10} {quote.unit:<12} "
               f"| {quote.source} | {when}")
+
+    print("\nMonthly history:")
+    for history in get_history().values():
+        if history.status == "ok":
+            first, last = history.values.index[0], history.values.index[-1]
+            print(f"✅ {history.name:<24} {len(history.values):>4} months "
+                  f"{first:%b-%y} → {last:%b-%y} (last {history.values.iloc[-1]:.2f}) | {history.source}")
+        else:
+            print(f"❌ {history.name:<24} failed: {history.error}")

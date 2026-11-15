@@ -29,6 +29,16 @@ CONTRACT_PREFIX_TTF = "TTF"
 CONTRACT_SUFFIX = ".NYM"
 MONTH_CODES = "FGHJKMNQUVXZ"   # the standard futures letters, January (F) to December (Z)
 
+# Monthly history (V3). FRED = the St. Louis Fed's free data site; no account needed.
+# Both series are IMF monthly averages, already in USD/MMBtu.
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id="
+FRED_SERIES_EUROPE = "PNGASEUUSDM"      # Europe natural gas (IMF, TTF-based)
+FRED_SERIES_HENRY_HUB = "PNGASUSUSDM"   # US natural gas, Henry Hub (IMF)
+SOURCE_FRED = "FRED (IMF, monthly)"
+SOURCE_YFINANCE_MONTHLY = "yfinance (monthly average of daily settlements)"
+HISTORY_CACHE_SECONDS = 24 * 60 * 60    # keep history 24 hours: it only changes once a month
+HISTORY_TIMEOUT_SECONDS = 20            # give up on a download after 20 seconds
+
 SOURCE_YFINANCE = "yfinance (delayed)"   # label shown next to every yfinance price
 SOURCE_YFINANCE_DAILY = "yfinance (daily settlement)"   # label for once-a-day prices (JKM)
 SOURCE_USER = "User input"               # label shown next to every sidebar input
