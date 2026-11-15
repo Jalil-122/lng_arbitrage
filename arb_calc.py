@@ -244,11 +244,25 @@ def calculate_arb(
 
 
 # ---------------------------------------------------------------------------
-# Sensitivity (V2): breakevens and spread curves
+# Sensitivity (V2, any port since V4): breakevens and spread curves
 # ---------------------------------------------------------------------------
-# "inputs" below is the same dictionary calculate_arb takes (the evaluation's inputs).
-# inputs.get("boil_off_nwe", 0.0) means "the boil-off if it's there, otherwise 0"
-# (Simple mode may leave it out, just like calculate_arb's default).
+# "inputs" below is the dictionary calculate_port_arb takes (the evaluation's inputs).
+# route_boil_off may be missing or None in Simple mode: then every boil-off is 0.
+
+def route_boil_off_of(inputs):
+    """The boil-off per route from the inputs, or an empty dict (= no boil-off)."""
+    return inputs.get("route_boil_off") or {}
+
+
+def open_routes(inputs, destination):
+    """The keys of the port's routes to one destination that are open."""
+    routes = config.LOAD_PORTS[inputs["port_key"]]["routes"]
+    keys = []
+    for route_key, route in routes.items():
+        if route["destination"] == destination and route_is_open(route["passages"], inputs["passage_open"]):
+            keys.append(route_key)
+    return keys
+
 
 def breakeven_jkm(inputs):
     """The JKM price (USD/MMBtu) at which Asia's best netback equals Europe's.
@@ -256,33 +270,34 @@ def breakeven_jkm(inputs):
     Asia netback for a route = (JKM - regas) x (1 - boil-off) - freight.
     Setting it equal to the Europe netback and solving for JKM gives:
         JKM = regas_asia + (netback_europe + freight) / (1 - boil-off)
-    Each open route gives one answer; the breakeven is the LOWEST one,
+    Each open Asia route gives one answer; the breakeven is the LOWEST one,
     because the cheapest route reaches parity first.
     """
-    result = calculate_arb(**inputs)
-    candidates = [
-        inputs["regas_asia"]
-        + (result["netback_europe"] + inputs["freight_cape"]) / (1 - inputs.get("boil_off_cape", 0.0))
-    ]
-    if inputs["panama_available"]:
-        candidates.append(
-            inputs["regas_asia"]
-            + (result["netback_europe"] + inputs["freight_panama"]) / (1 - inputs.get("boil_off_panama", 0.0))
-        )
+    result = calculate_port_arb(**inputs)
+    boil_offs = route_boil_off_of(inputs)
+    candidates = []
+    for route_key in open_routes(inputs, "asia"):
+        freight = inputs["route_freight"][route_key]
+        boil_off = boil_offs.get(route_key, 0.0)
+        candidates.append(inputs["regas_asia"] + (result["netback_europe"] + freight) / (1 - boil_off))
     return min(candidates)
 
 
 def breakeven_ttf(inputs):
-    """The TTF price (EUR/MWh) at which Europe's netback equals Asia's best netback.
+    """The TTF price (EUR/MWh) at which Europe's best netback equals Asia's.
 
     Europe netback = (TTF_usd - regas) x (1 - boil-off) - freight. Solving for TTF:
-        TTF_usd = regas_europe + (netback_asia + freight_nwe) / (1 - boil-off_nwe)
-    then converted back to EUR/MWh: x 3.412 / EURUSD.
+        TTF_usd = regas_europe + (netback_asia + freight) / (1 - boil-off)
+    (the lowest over the open Europe routes), then converted back to EUR/MWh: x 3.412 / EURUSD.
     """
-    result = calculate_arb(**inputs)
-    ttf_usd = (inputs["regas_europe"]
-               + (result["netback_asia"] + inputs["freight_nwe"]) / (1 - inputs.get("boil_off_nwe", 0.0)))
-    return ttf_usd * config.MMBTU_PER_MWH / inputs["eurusd"]
+    result = calculate_port_arb(**inputs)
+    boil_offs = route_boil_off_of(inputs)
+    candidates = []
+    for route_key in open_routes(inputs, "nwe"):
+        freight = inputs["route_freight"][route_key]
+        boil_off = boil_offs.get(route_key, 0.0)
+        candidates.append(inputs["regas_europe"] + (result["netback_asia"] + freight) / (1 - boil_off))
+    return min(candidates) * config.MMBTU_PER_MWH / inputs["eurusd"]
 
 
 def spread_curve(inputs, price_name, low, high, points=config.SENSITIVITY_POINTS):
@@ -298,7 +313,7 @@ def spread_curve(inputs, price_name, low, high, points=config.SENSITIVITY_POINTS
         changed = dict(inputs)                            # a copy, so we don't alter the original
         changed[price_name] = price
         prices.append(price)
-        spreads.append(calculate_arb(**changed)["spread"])
+        spreads.append(calculate_port_arb(**changed)["spread"])
     return prices, spreads
 
 
@@ -310,7 +325,10 @@ OUTCOMES = ["Europe", "Asia", "Indifferent", "Cancel"]   # the four possible ans
 
 
 def outcome(result):
-    """Sum up a result in one word: "Europe", "Asia", "Indifferent" or "Cancel"."""
+    """Sum up a result in one word: "Europe", "Asia", "Indifferent" or "Cancel".
+
+    Cancel only exists for US cargoes (non-US results have decision None).
+    """
     if result["decision"] == "CANCEL":
         return "Cancel"
     return result["winner"]
@@ -319,16 +337,15 @@ def outcome(result):
 def decision_grid(inputs, jkm_values, freight_values):
     """Re-run the arb for every (JKM, Asia freight) pair.
 
-    freight_values replace the freight of the Asia route chosen in `inputs`
-    (Panama or Cape); the other route keeps its own freight, so the app may
-    switch routes if that one becomes cheaper.
+    freight_values replace the freight of the Asia route chosen in `inputs`;
+    the other Asia routes keep their own freight, so the cargo may switch
+    routes if the chosen one becomes too expensive.
 
     Returns two grids (lists of rows, one row per freight value):
       outcomes: the one-word outcome of each cell
       spreads:  the spread (Asia - Europe) of each cell
     """
-    chosen_route = calculate_arb(**inputs)["asia_route"]          # "Panama" or "Cape"
-    freight_key = "freight_panama" if chosen_route == "Panama" else "freight_cape"
+    chosen_route = calculate_port_arb(**inputs)["asia_route"]
 
     outcomes = []
     spreads = []
@@ -338,8 +355,9 @@ def decision_grid(inputs, jkm_values, freight_values):
         for jkm in jkm_values:              # one cell per JKM level
             changed = dict(inputs)
             changed["jkm"] = jkm
-            changed[freight_key] = freight
-            result = calculate_arb(**changed)
+            changed["route_freight"] = dict(inputs["route_freight"])   # copy, then change one route
+            changed["route_freight"][chosen_route] = freight
+            result = calculate_port_arb(**changed)
             outcome_row.append(outcome(result))
             spread_row.append(result["spread"])
         outcomes.append(outcome_row)

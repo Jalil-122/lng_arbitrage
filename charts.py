@@ -272,7 +272,7 @@ def decision_heatmap(jkm_values, freight_values, outcomes, spreads,
         font={"color": TEXT, "family": MONO, "size": 11},
         legend={"orientation": "h", "y": 1.02, "yanchor": "bottom", "x": 0},
         xaxis={"title": "JKM ($/MMBtu)", "showgrid": False},
-        yaxis={"title": f"Asia freight via {route_name} ($/MMBtu)", "showgrid": False},
+        yaxis={"title": f"Asia freight {route_name} ($/MMBtu)", "showgrid": False},
     )
     return figure
 

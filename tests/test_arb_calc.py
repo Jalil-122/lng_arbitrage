@@ -197,18 +197,25 @@ def test_boil_off_flips_base_case_to_europe():
 # V2: breakevens and spread curves (SPEC.md 12.4, done criterion 6)
 # ---------------------------------------------------------------------------
 
+# Since V4 these functions take the any-port inputs. SABINE_INPUTS (defined further
+# down, in the V4 section) is the same base case: Sabine Pass, Suez avoided,
+# freight NWE 0.90, Panama 1.60, Cape 2.10. So the expected numbers are unchanged.
+PANAMA_CLOSED = {"panama": False, "suez": False, "hormuz": True}
+
+
 def test_breakeven_jkm_simple_mode():
-    # Europe netback 9.933705. Cheapest Asia route is Panama (freight 1.60):
+    # Europe netback 9.933705. Cheapest open Asia route is Panama (freight 1.60):
     #   JKM = regas 0.35 + (9.933705 + 1.60) / (1 - 0) = 11.883705
-    breakeven = arb_calc.breakeven_jkm(BASE_INPUTS)
+    breakeven = arb_calc.breakeven_jkm(SABINE_INPUTS)
     assert breakeven == pytest.approx(11.883705, abs=1e-6)
     # ...and at that JKM the spread really is zero
-    assert arb_calc.calculate_arb(**dict(BASE_INPUTS, jkm=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+    at_breakeven = arb_calc.calculate_port_arb(**dict(SABINE_INPUTS, jkm=breakeven))
+    assert at_breakeven["spread"] == pytest.approx(0, abs=1e-9)
 
 
 def test_breakeven_jkm_panama_closed_uses_cape():
-    # Panama closed: only Cape (freight 2.10): 0.35 + 9.933705 + 2.10 = 12.383705
-    inputs = dict(BASE_INPUTS, panama_available=False)
+    # Panama (and Suez) closed: only Cape (freight 2.10): 0.35 + 9.933705 + 2.10 = 12.383705
+    inputs = dict(SABINE_INPUTS, passage_open=PANAMA_CLOSED)
     assert arb_calc.breakeven_jkm(inputs) == pytest.approx(12.383705, abs=1e-6)
 
 
@@ -216,28 +223,44 @@ def test_breakeven_ttf_simple_mode():
     # Asia netback 10.05 (Panama). Europe parity:
     #   TTF_usd = 0.45 + (10.05 + 0.90) = 11.40 $/MMBtu
     #   in EUR/MWh: 11.40 x 3.412 / 1.10 = 35.360727
-    breakeven = arb_calc.breakeven_ttf(BASE_INPUTS)
+    breakeven = arb_calc.breakeven_ttf(SABINE_INPUTS)
     assert breakeven == pytest.approx(35.360727, abs=1e-6)
-    assert arb_calc.calculate_arb(**dict(BASE_INPUTS, ttf_eur_mwh=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+    at_breakeven = arb_calc.calculate_port_arb(**dict(SABINE_INPUTS, ttf_eur_mwh=breakeven))
+    assert at_breakeven["spread"] == pytest.approx(0, abs=1e-9)
 
 
 def test_breakeven_jkm_detailed_mode_with_boil_off():
     # Europe netback 10.042033 (with boil-off). Panama: freight 1.428571, boil-off 2.5%:
     #   JKM = 0.35 + (10.042033 + 1.428571) / 0.975 = 12.114722
-    b = arb_calc.detailed_freight(**VOYAGE)
+    b = arb_calc.port_detailed_freight(
+        "sabine_pass", {"nwe": 14, "asia_panama": 25, "asia_suez": 38, "asia_cape": 40},
+        charter_rate=80_000, cargo_mmbtu=3_500_000, boil_off_pct_per_day=0.10,
+        panama_toll=500_000, suez_toll=450_000,
+    )
     inputs = dict(
-        BASE_INPUTS,
-        freight_nwe=b["nwe"]["freight"], freight_panama=b["panama"]["freight"],
-        freight_cape=b["cape"]["freight"], boil_off_nwe=b["nwe"]["boil_off"],
-        boil_off_panama=b["panama"]["boil_off"], boil_off_cape=b["cape"]["boil_off"],
+        SABINE_INPUTS,
+        route_freight={route: b[route]["freight"] for route in b},
+        route_boil_off={route: b[route]["boil_off"] for route in b},
     )
     breakeven = arb_calc.breakeven_jkm(inputs)
     assert breakeven == pytest.approx(12.114722, abs=1e-6)
-    assert arb_calc.calculate_arb(**dict(inputs, jkm=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+    assert arb_calc.calculate_port_arb(**dict(inputs, jkm=breakeven))["spread"] == pytest.approx(0, abs=1e-9)
+
+
+def test_breakeven_ttf_uses_the_cheapest_open_europe_route():
+    # Ras Laffan, Suez closed: Europe only via the Cape (freight 1.20). Asia netback 10.90.
+    #   TTF_usd = 0.45 + (10.90 + 1.20) = 12.55 ; in EUR/MWh: 12.55 x 3.412 / 1.10 = 38.927818
+    inputs = {
+        "port_key": "ras_laffan", "ttf_eur_mwh": 35.00, "eurusd": 1.10, "jkm": 12.00,
+        "route_freight": {"nwe_suez": 0.70, "nwe_cape": 1.20, "asia": 0.75},
+        "regas_europe": 0.45, "regas_asia": 0.35,
+        "passage_open": {"panama": True, "suez": False, "hormuz": False},
+    }
+    assert arb_calc.breakeven_ttf(inputs) == pytest.approx(38.927818, abs=1e-6)
 
 
 def test_spread_curve_rises_with_jkm():
-    prices, spreads = arb_calc.spread_curve(BASE_INPUTS, "jkm", 10.0, 14.0, points=5)
+    prices, spreads = arb_calc.spread_curve(SABINE_INPUTS, "jkm", 10.0, 14.0, points=5)
     assert prices == [10.0, 11.0, 12.0, 13.0, 14.0]
     assert spreads == sorted(spreads)                              # higher JKM -> Asia better
     assert spreads[2] == pytest.approx(0.116295, abs=1e-6)         # JKM 12 = the base case
@@ -256,7 +279,7 @@ def test_outcome_labels():
 
 def test_decision_grid_cells_by_hand():
     # Rows = Asia freight (Panama, the chosen route), columns = JKM
-    outcomes, spreads = arb_calc.decision_grid(BASE_INPUTS, [11.0, 12.0], [1.60, 3.00])
+    outcomes, spreads = arb_calc.decision_grid(SABINE_INPUTS, [11.0, 12.0], [1.60, 3.00])
 
     # JKM 12, freight 1.60: Panama 10.05 vs Europe 9.933705 -> +0.116295 -> Asia
     assert outcomes[0][1] == "Asia"
@@ -272,7 +295,7 @@ def test_decision_grid_cells_by_hand():
 
 def test_decision_grid_shows_cancel():
     # HH at 10: FOB variable 11.50 is above every netback in the grid -> Cancel everywhere
-    outcomes, _ = arb_calc.decision_grid(dict(BASE_INPUTS, henry_hub=10.0), [11.0, 12.0], [1.6])
+    outcomes, _ = arb_calc.decision_grid(dict(SABINE_INPUTS, henry_hub=10.0), [11.0, 12.0], [1.6])
     assert outcomes == [["Cancel", "Cancel"]]
 
 
