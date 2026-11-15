@@ -5,7 +5,7 @@
 - **Owner:** a former gas trader (TTF, biomethane), now on the LBS Master in Financial Analysis and **learning Python**. They know the market well; Python is new to them.
 - **Goal:** a CV project. A Streamlit dashboard that answers "should a US LNG cargo from Sabine Pass go to Europe or Asia right now, and by how much?"
 - **Full scope and formulas:** see [SPEC.md](SPEC.md). SPEC.md is the source of truth. If code and spec disagree, ask before changing either.
-- **Versions:** V1 (calculator, live data, "Evaluate a cargo" pop-up) is **done**. V2 (freight & boil-off model, dark terminal design, route map, sensitivity charts; SPEC.md section 12) is **done**: all criteria in SPEC.md 12.6 checked. **V3 is in progress**: historical arb analysis (free monthly history: FRED + Yahoo) and M+1 delivery pricing. Its spec is SPEC.md section 13. After V3: publish on Streamlit Community Cloud (the owner wants the whole site finished first).
+- **Versions:** V1 (calculator, live data, "Evaluate a cargo" pop-up) is **done**. V2 (freight & boil-off model, dark terminal design, route map, sensitivity charts; SPEC.md section 12) is **done**: all criteria in SPEC.md 12.6 checked. V3 (historical arb analysis from free monthly history: FRED + Yahoo, and M+1 delivery pricing; SPEC.md section 13) is **done**: all criteria in SPEC.md 13.7 checked. **Next:** publish on Streamlit Community Cloud (the owner does the sign-in).
 - **GitHub:** https://github.com/Jalil-122/lng_arbitrage. After committing, `git push` uploads (the owner's token is saved in the macOS Keychain; never handle tokens).
 
 ## Architecture rules (desk-tool design)
@@ -29,7 +29,7 @@
 4. Don't add libraries, files or features that aren't in SPEC.md without asking first.
 5. When you teach a new Python or Streamlit idea for the first time, add a one- or two-line explanation.
 
-## V3 build order
+## V3 build order (done)
 
 1. M+1 contract months: month-code logic + contract quotes in `market_data.py`, with tests (SPEC 13.4).
 2. Pop-up "Delivery pricing" switch (Front month / M+1) + TTF M+1 row in the live market panel.

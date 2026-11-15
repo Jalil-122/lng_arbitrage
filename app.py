@@ -937,6 +937,9 @@ def history_tab():
         names = ", ".join(series.name for series in failed)
         st.error(f"Could not load the history for: {names}. Check your internet connection "
                  "and reload the page later. The 'Evaluate a cargo' tab still works.")
+        # Forget this failed attempt, so the next page load tries again
+        # (otherwise the failure would be kept in memory for 24 hours)
+        load_history.clear()
         return
 
     inputs = history_inputs()
